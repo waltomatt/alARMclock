@@ -1,0 +1,91 @@
+KMD
+00000000:             ; ;     Left                  Right
+00000000:             ; ; R   00000100 (0x4)        01000000 (0x40)
+00000000:             ; ; A   00000010 (0x2)        00100000 (0x20)
+00000000:             ; ; G   00010001 (0x1)        00010001 (0x10)
+00000000:             ; 
+00000000:             ; 
+00000000: E28FD0C8    ; Main        ADR   SP, Stack           ; initiailise stack pointer
+00000004: E28DD008    ;             ADD   SP, SP, #8          ; our stack is only 2 bytes
+00000008: E3A03201    ;             LDR   R3, =&10000000      ;  move the address of the LEDs into R2, going to keep th
+                      ; is register for our address
+0000000C: E3A01000    ;             MOV   R1, #0              ; want to reset all the lights
+00000010: E5431000    ;             STRB  R1, [R3]            ; store back
+00000014:             ; 
+00000014: E3811004    ; State_0     ORR   R1, R1, #&4         ; turn on the left red light
+00000018: E3811040    ;             ORR   R1, R1, #&40        ; Turn on the right red light
+0000001C: E5431000    ;             STRB  R1, [R3]            ; store back
+00000020: E3A00001    ;             MOV   R0, #1              ; 1 delay
+00000024: EB000020    ;             BL    Do_delay
+00000028:             ; 
+00000028: E3811002    ; State_1     ORR   R1, R1, #&2         ; turn on left ambre
+0000002C: E5431000    ;             STRB  R1, [R3]            ; store back
+00000030: EB00001D    ;             BL    Do_delay            ; 1 delay
+00000034:             ; 
+00000034: E3C11004    ; State_2     BIC   R1, R1, #&4         ; turn off red left
+00000038: E3C11002    ;             BIC   R1, R1, #&2         ; turn off amber left
+0000003C: E3811001    ;             ORR   R1, R1, #&1         ; turn on green left
+00000040: E5431000    ;             STRB  R1, [R3]            ; store back
+00000044: E3A00003    ;             MOV   R0, #3              ; delay 3 this time
+00000048: EB000017    ;             BL    Do_delay
+0000004C:             ; 
+0000004C: E3C11001    ; State_3     BIC   R1, R1, #&1         ; turn off left green
+00000050: E3811002    ;             ORR   R1, R1, #&2         ; turn on amber left
+00000054: E5431000    ;             STRB  R1, [R3]            ; store back
+00000058: E3A00001    ;             MOV   R0, #1              ; delay 1
+0000005C: EB000012    ;             BL    Do_delay
+00000060:             ; 
+00000060: E3C11002    ; State_4     BIC   R1, R1, #&2         ; turn off amber left
+00000064: E3811004    ;             ORR   R1, R1, #&4         ; turn on red left
+00000068: E5431000    ;             STRB  R1, [R3]            ; store back
+0000006C: EB00000E    ;             BL    Do_delay            ; delay for 1 again
+00000070:             ; 
+00000070: E3811020    ; State_5     ORR   R1, R1, #&20        ; turn on right amber
+00000074: E5431000    ;             STRB  R1, [R3]            ; store back
+00000078: EB00000B    ;             BL    Do_delay            ; delay for 1 again
+0000007C:             ; 
+0000007C: E3C11040    ; State_6     BIC   R1, R1, #&40        ; turn off right red
+00000080: E3C11020    ;             BIC   R1, R1, #&20        ; turn off right amber
+00000084: E3811010    ;             ORR   R1, R1, #&10        ; turn on right green
+00000088: E5431000    ;             STRB  R1, [R3]            ; store back
+0000008C: E3A00003    ;             MOV   R0, #3              ; delay for 3
+00000090: EB000005    ;             BL    Do_delay
+00000094:             ; 
+00000094: E3C11010    ; State_7     BIC   R1, R1, #&10        ; turn off right green
+00000098: E3811020    ;             ORR   R1, R1, #&20        ; turn on right amber
+0000009C: E5431000    ;             STRB  R1, [R3]            ; store back
+000000A0: E3A00001    ;             MOV   R0, #1              ; delay for 1
+000000A4: EB000000    ;             BL    Do_delay
+000000A8:             ; 
+000000A8: EAFFFFD4    ;             BAL   Main                ; restart sequence
+000000AC:             ; 
+000000AC:             ; ; Do_delay subroutine, R0 = delay
+000000AC: E92D0006    ; Do_delay    STMFD SP!, {R1, R2}       ; push working registers
+000000B0: E3A01803    ;             LDR   R1, =&30000         ; how many loops for one cycle in delay
+000000B4: E0010091    ;             MUL   R1, R1, R0          ; multiply the amount of loops by the delay specified
+000000B8: E3A02000    ;             MOV   R2, #0              ; r2 will be the counter in the delay cycle
+000000BC:             ; 
+000000BC: E2822001    ; Delay_loop  ADD   R2, R2, #1          ; add 1 to our counter
+000000C0: E1520001    ;             CMP   R2, R1              ; check if we've delayed enough yet
+000000C4: BAFFFFFC    ;             BLT   Delay_loop          ; if not, keep looping
+000000C8: E8BD0006    ;             LDMFD SP!, {R1, R2}       ; pop our working registers
+000000CC: E1A0F00E    ;             MOV   PC, LR              ; return
+000000D0:             ; 
+000000D0:             ; 
+000000D0:             ; Stack       DEFS  2                   ; define our Stack
+000000D2:             ; 
+000000D2: 00 00       ; Remaining literals
+
+Symbol Table: Labels
+: Main                              00000000  Local -- ARM
+: State_0                           00000014  Local -- ARM
+: State_1                           00000028  Local -- ARM
+: State_2                           00000034  Local -- ARM
+: State_3                           0000004C  Local -- ARM
+: State_4                           00000060  Local -- ARM
+: State_5                           00000070  Local -- ARM
+: State_6                           0000007C  Local -- ARM
+: State_7                           00000094  Local -- ARM
+: Do_delay                          000000AC  Local -- ARM
+: Delay_loop                        000000BC  Local -- ARM
+: Stack                             000000D0  Local -- ARM

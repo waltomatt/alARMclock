@@ -1,0 +1,183 @@
+KMD
+00000000:             ; ;-------------------------------------------------------------------------------
+00000000:             ; ;         EX3: Nesting Procedure Calls
+00000000:             ; ;         Matt Walton
+00000000:             ; ;         Version 1.0
+00000000:             ; ;         11th February 2019
+00000000:             ; ;
+00000000:             ; ;         This program demonstrates the use of the stack to nest Procedure
+00000000:             ; ;         calls. It implements a driver for the HD44780 LCD controller
+00000000:             ; ;         and provides methods to print to & control the screen.
+00000000:             ; ;
+00000000:             ; ;-------------------------------------------------------------------------------
+00000000:             ; 
+00000000:             ; 
+00000000:             ; cmd_clear   EQU   &1                ; clear command code
+00000000:             ; 
+00000000: EA000053    ;             BAL Main
+00000004:             ; stack       DEFS  128
+00000084: 48 65 6C 6C ; data        DEFB  'Hello! \0'
+00000088: 6F 21 20 00 ; 
+0000008C: 57 6F 72 6C ; data2       DEFB  'World!\0'
+00000090: 64 21 00    ; 
+00000093:             ; 
+00000094:             ; ALIGN 4
+00000094:             ; 
+00000094:             ; INCLUDE     driver.s
+00000094:             ; ;-------------------------------------------------------------------------------
+00000094:             ; ;         EX3: Nesting Procedure Calls
+00000094:             ; ;         Matt Walton
+00000094:             ; ;         Version 1.0
+00000094:             ; ;         11th February 2019
+00000094:             ; ;
+00000094:             ; ;         This program demonstrates the use of the stack to nest Procedure
+00000094:             ; ;         calls. It implements a driver for the HD44780 LCD controller
+00000094:             ; ;         and provides methods to print to & control the screen.
+00000094:             ; ;
+00000094:             ; ;-------------------------------------------------------------------------------
+00000094:             ; 
+00000094:             ; ; driver.s
+00000094:             ; ; This contains the low level 'device driver' which is doing the direct
+00000094:             ; ; bit manipulation for the LCD controller.
+00000094:             ; ; This is supposed to be on the operating system 'layer'
+00000094:             ; 
+00000094:             ; 
+00000094:             ; port_A      EQU   &10000000         ; statically define our address for the data port of the LC
+                      ; D
+00000094:             ; port_B      EQU   &10000004         ; statically define for the control port
+00000094:             ; 
+00000094:             ; bit_7       EQU   &80
+00000094:             ; bit_6       EQU   &40
+00000094:             ; bit_5       EQU   &20
+00000094:             ; bit_4       EQU   &10
+00000094:             ; bit_3       EQU   &8
+00000094:             ; bit_2       EQU   &4                ; high on bit 2 (lcd r/w)
+00000094:             ; bit_1       EQU   &2                ; high on bit 1 (lcd RS)
+00000094:             ; bit_0       EQU   &1                ; high on bit 0 (lcd E)
+00000094:             ; 
+00000094:             ; lcd_rw      EQU   bit_2
+00000094:             ; lcd_rs      EQU   bit_1
+00000094:             ; lcd_e       EQU   bit_0
+00000094:             ; 
+00000094:             ; ; Procedure to check if the LCD is ready & wait until it is
+00000094: E92D401C    ; Wait_ready  STMFD SP!, {LR, R2, R3, R4}
+00000098: E3802004    ;             ORR   R2, R0, #lcd_rw       ; set r/w bit to 1
+0000009C: E3C22002    ;             BIC   R2, R2, #lcd_rs       ; set RS=0
+000000A0: E3A03241    ;             MOV   R3, #port_B           ; copy address of port B into R3
+000000A4: E5432000    ;             STRB  R2, [R3]              ; write data to port B
+000000A8: E3822001    ; wr_loop     ORR   R2, R2, #lcd_e        ; set E=1
+000000AC: E5432000    ;             STRB  R2, [R3]              ; write data to port B
+000000B0: E3A04201    ;             MOV   R4, #port_A           ; copy address of port A into R4
+000000B4: E5544000    ;             LDRB  R4, [R4]              ; read our status bytes
+000000B8: E3C22001    ;             BIC   R2, R2, #lcd_e        ; set E=0
+000000BC: E5432000    ;             STRB  R2, [R3]              ; write command back
+000000C0: E2044080    ;             AND   R4, R4, #bit_7
+000000C4: E2544080    ;             SUBS  R4, R4, #bit_7
+000000C8: 0AFFFFF6    ;             BEQ   wr_loop               ; we are still busy, poll again
+000000CC: E8BD801C    ;             LDMFD SP!, {PC, R2, R3, R4} ; pop & return
+000000D0:             ; 
+000000D0:             ; ; Procedure to write a single character (R1) to the LCD
+000000D0: E92D400C    ; Write_char  STMFD SP!, {LR, R2, R3} ; push R2-4 to stack
+000000D4: EBFFFFEE    ;             BL    Wait_ready        ; wait until the LCD is ready
+000000D8: E3C02004    ; LCD_status  BIC   R2, R0, #lcd_rw   ; set r/w to 0
+000000DC: E3822002    ;             ORR   R2, R2, #lcd_rs   ; set rs to 1
+000000E0: E3A03201    ;             MOV   R3, #port_A       ; copy the adr of portA into R4
+000000E4: E5431000    ;             STRB  R1, [R3]          ; write our character
+000000E8: E3A03241    ;             MOV   R3, #port_B       ; copy addr of portB into R3
+000000EC: E3822001    ;             ORR   R2, R2, #lcd_e    ; set E=1
+000000F0: E5432000    ;             STRB  R2, [R3]          ; write command back
+000000F4: E3C22001    ;             BIC   R2, R2, #lcd_e    ; set E=0
+000000F8: E5432000    ;             STRB  R2, [R3]
+000000FC: E8BD800C    ;             LDMFD SP!, {PC, R2, R3} ; pop our registers back & branch back
+00000100:             ; 
+00000100: E92D401C    ; Write_cmd   STMFD SP!, {LR, R2, R3, R4}
+00000104: EBFFFFE2    ;             BL    Wait_ready                    ; wait for lcd to be ready
+00000108: E3A03241    ;             MOV   R3, #port_B                   ; copy address of port B to R3
+0000010C: E5532000    ;             LDRB  R2, [R3]                      ; load ctrl byte back into R2
+00000110: E3C22006    ;             BIC   R2, R2, #(lcd_rs OR lcd_rw)   ; set RS=0, R/W = 0
+00000114: E3A03241    ;             MOV   R3, #port_B
+00000118: E5432000    ;             STRB  R2, [R3]                      ; store back in port B
+0000011C: E3A04201    ;             MOV   R4, #port_A                   ; copy addr of port A to R4
+00000120: E5441000    ;             STRB  R1, [R4]                      ; store our cmd
+00000124: E3822001    ;             ORR   R2, R2, #lcd_e                ; set E=1
+00000128: E5431000    ;             STRB  R1, [R3]
+0000012C: E3C22001    ;             BIC   R2, R2, #lcd_e                ; set E=0
+00000130: E5431000    ;             STRB  R1, [R3]
+00000134: E8BD801C    ;             LDMFD SP!, {PC, R2, R3, R4}          ; pop registers back and branch back
+00000138:             ; 
+00000138:             ; INCLUDE     library.s
+00000138:             ; ;-------------------------------------------------------------------------------
+00000138:             ; ;         EX3: Nesting Procedure Calls
+00000138:             ; ;         Matt Walton
+00000138:             ; ;         Version 1.0
+00000138:             ; ;         11th February 2019
+00000138:             ; ;
+00000138:             ; ;         This program demonstrates the use of the stack to nest Procedure
+00000138:             ; ;         calls. It implements a driver for the HD44780 LCD controller
+00000138:             ; ;         and provides methods to print to & control the screen.
+00000138:             ; ;
+00000138:             ; ;-------------------------------------------------------------------------------
+00000138:             ; 
+00000138:             ; 
+00000138:             ; ; Procedure to write a string to the LCD
+00000138:             ; ; R1 = start address of string
+00000138:             ; ; The procedure will continue until a null byte string terminator is hit
+00000138:             ; 
+00000138: E92D4002    ; Write_str   STMFD SP!, {LR, R1}     ; we're using R2, and want to push the LR to the stack
+0000013C: E4D21001    ; next_byte   LDRB  R1, [R2], #1      ; load our byte into R2 and increment
+00000140: E3510000    ;             CMP   R1, #0            ; are we at null byte? end of string?
+00000144: 0A000001    ;             BEQ   wstr_dne
+00000148:             ; 
+00000148: EBFFFFE0    ;             BL    Write_char
+0000014C: EAFFFFFA    ;             BAL   next_byte
+00000150: E8BD8002    ; wstr_dne    LDMFD SP!, {PC, R1}     ; pop our registers back and branch back
+00000154:             ; 
+00000154:             ; 
+00000154: E24FDF56    ; Main        ADR   SP, stack         ; initiailise stack pointer
+00000158: E28DD080    ;             ADD   SP, SP, #&80      ; allocate 128 bytes for the stack (cos why not)
+0000015C: E3A01001    ;             MOV   R1, #cmd_clear    ; going to clear the screen
+00000160: EBFFFFE6    ;             BL    Write_cmd
+00000164:             ; 
+00000164: E24F20E8    ;             ADR   R2, data          ; print our first string
+00000168: EBFFFFF2    ;             BL    Write_str
+0000016C:             ; 
+0000016C: E3A010C0    ;             MOV   R1, #&C0          ; move to second line?
+00000170: EBFFFFE2    ;             BL    Write_cmd
+00000174:             ; 
+00000174: E24F20F0    ;             ADR   R2, data2         ; print our second string
+00000178: EBFFFFEE    ;             BL    Write_str
+0000017C:             ; 
+0000017C: EAFFFFFF    ;             BAL   Done
+00000180:             ; 
+00000180:             ; 
+00000180: EAFFFFFE    ; Done        BAL   Done
+00000184:             ; 
+
+Symbol Table: Labels
+: cmd_clear                         00000001  Value
+: stack                             00000004  Local -- ARM
+: data                              00000084  Local -- ARM
+: data2                             0000008C  Local -- ARM
+: port_A                            10000000  Value
+: port_B                            10000004  Value
+: bit_7                             00000080  Value
+: bit_6                             00000040  Value
+: bit_5                             00000020  Value
+: bit_4                             00000010  Value
+: bit_3                             00000008  Value
+: bit_2                             00000004  Value
+: bit_1                             00000002  Value
+: bit_0                             00000001  Value
+: lcd_rw                            00000004  Value
+: lcd_rs                            00000002  Value
+: lcd_e                             00000001  Value
+: Wait_ready                        00000094  Local -- ARM
+: wr_loop                           000000A8  Local -- ARM
+: Write_char                        000000D0  Local -- ARM
+: LCD_status                        000000D8  Local -- ARM
+: Write_cmd                         00000100  Local -- ARM
+: Write_str                         00000138  Local -- ARM
+: next_byte                         0000013C  Local -- ARM
+: wstr_dne                          00000150  Local -- ARM
+: Main                              00000154  Local -- ARM
+: Done                              00000180  Local -- ARM

@@ -1,0 +1,14 @@
+KMD
+00000000: E3A00071    ; MOV R0, #&71
+00000004: E3100080    ; TST R0, #&80
+00000008: 0A000004    ; BEQ success
+0000000C: E2000080    ; AND R0, R0, #&80
+00000010: E2500080    ; SUBS R0, R0, #&80
+00000014: 0A000001    ; BEQ success
+00000018: E0800000    ; ADD R0, R0, R0
+0000001C: E0800000    ; ADD R0, R0, R0
+00000020: E3A01001    ; success MOV R1, #1
+00000024:             ; 
+
+Symbol Table: Labels
+: success                           00000020  Local -- ARM

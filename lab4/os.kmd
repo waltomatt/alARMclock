@@ -1,0 +1,210 @@
+KMD
+00000000:             ; ;---------------------------------------------------------------------------
+00000000:             ; ;       EX4: System calls
+00000000:             ; ;       Matt Walton
+00000000:             ; ;       Version 1.0
+00000000:             ; ;       18th February 2019
+00000000:             ; ;
+00000000:             ; ;       This program implements my previous code for writing to an LCD
+00000000:             ; ;       but instead making sure the driver is run in supervisor mode
+00000000:             ; ;       and calls are made from user code to this via SVC calls.
+00000000:             ; ;
+00000000:             ; ;---------------------------------------------------------------------------
+00000000:             ; 
+00000000:             ; ; os.s
+00000000:             ; ; This contains the basic 'operating system' code
+00000000:             ; ; It initalises the devices, defines service routines,
+00000000:             ; ; and also contains the device driver for the HD44780 LCD controller
+00000000:             ; 
+00000000:             ;               ORG   0
+00000000: EA00005C    ;               B     Init_stacks       ; define what to do on reset
+00000008:             ;               ORG   8
+00000008: EA00006C    ;               B     SVC_entry         ; define what to do on svc
+0000000C:             ; 
+0000000C:             ; stack_size    EQU   &80               ; Define the stack size for both user and supervisor
+0000000C:             ; 
+0000000C:             ; super_stack   DEFS  stack_size
+0000008C:             ; user_stack    DEFS  stack_size
+0000010C:             ; 
+0000010C:             ; cpsr_sys      EQU   &1F
+0000010C:             ; cpsr_svc      EQU   &13
+0000010C:             ; cpsr_usr      EQU   &10
+0000010C:             ; 
+0000010C:             ; port_A        EQU   &10000000         ; statically define the base for the data port of the LCD
+0000010C:             ; port_B_off    EQU   &00000004         ; define the adr of port B as an offset to port A
+0000010C:             ; 
+0000010C:             ; bit_7         EQU   &80
+0000010C:             ; bit_2         EQU   &4
+0000010C:             ; bit_1         EQU   &2
+0000010C:             ; bit_0         EQU   &1
+0000010C:             ; 
+0000010C:             ; lcd_rw        EQU   bit_2
+0000010C:             ; lcd_rs        EQU   bit_1
+0000010C:             ; lcd_e         EQU   bit_0
+0000010C:             ; 
+0000010C:             ; cmd_clear     EQU   &1
+0000010C:             ; 
+0000010C:             ; INCLUDE       program.s               ; include our program code
+0000010C:             ; INCLUDE     library.s
+0000010C:             ; ;---------------------------------------------------------------------------
+0000010C:             ; ;       EX4: System calls
+0000010C:             ; ;       Matt Walton
+0000010C:             ; ;       Version 1.0
+0000010C:             ; ;       18th February 2019
+0000010C:             ; ;
+0000010C:             ; ;       This program implements my previous code for writing to an LCD
+0000010C:             ; ;       but instead making sure the driver is run in supervisor mode
+0000010C:             ; ;       and calls are made from user code to this via SVC calls.
+0000010C:             ; ;
+0000010C:             ; ;---------------------------------------------------------------------------
+0000010C:             ; 
+0000010C:             ; ; library.s
+0000010C:             ; ; this provides functions to make calls to the LCD driver a bit nicer
+0000010C:             ; 
+0000010C:             ; ; Procedure to write a character to the LCD using the SVC call
+0000010C:             ; ; R0 = character
+0000010C: E92D4003    ; Write_char  STMFD SP!, {LR, R1 ,R0}
+00000110: E1A01000    ;             MOV   R1, R0            ; move our value at R0 to R1
+00000114: E3A00001    ;             MOV   R0, #1            ; we want to write a character
+00000118: EF000000    ;             SVC   0                 ; Call our service routine
+0000011C: E8BD8003    ;             LDMFD SP!, {PC, R1, R0}
+00000120:             ; 
+00000120:             ; 
+00000120:             ; ; Procedure to send a command to the LCD controller
+00000120:             ; ; R0 = cmd
+00000120: E92D4003    ; Write_cmd   STMFD SP!, {LR, R1 ,R0}
+00000124: E1A01000    ;             MOV   R1, R0            ; move our value at R0 to R1
+00000128: E3A00000    ;             MOV   R0, #0            ; we want to send a command
+0000012C: EF000000    ;             SVC   0                 ; Call our service routine
+00000130: E8BD8003    ;             LDMFD SP!, {PC, R1, R0}
+00000134:             ; 
+00000134:             ; ; Procedure to write a string to the LCD
+00000134:             ; ; R0 = start address of string
+00000134:             ; ; The procedure will continue until a null byte string terminator is hit
+00000134:             ; 
+00000134: E92D4003    ; Write_str   STMFD SP!, {LR, R0, R1}     ; we're using R2, and want to push the LR to the stack
+00000138: E1A01000    ;             MOV   R1, R0            ; move R0 > R1
+0000013C: E4D10001    ; next_byte   LDRB  R0, [R1], #1      ; load our byte into R2 and increment
+00000140: E3500000    ;             CMP   R0, #0            ; are we at null byte? end of string?
+00000144: 0A000001    ;             BEQ   wstr_dne
+00000148:             ; 
+00000148: EBFFFFEF    ;             BL    Write_char
+0000014C: EAFFFFFA    ;             BAL   next_byte
+00000150: E8BD8003    ; wstr_dne    LDMFD SP!, {PC, R0, R1}     ; pop our registers back and branch back
+00000154:             ; 
+00000154:             ; 
+00000154: 42 79 65 21 ; data        DEFB  'Bye! \0'
+00000158: 20 00       ; 
+0000015A: 57 6F 72 6C ; data2       DEFB  'World! \0'
+0000015E: 64 21 20 00 ; 
+00000162:             ; 
+00000164:             ;             ALIGN       4
+00000164:             ; 
+00000164: E24F0018    ; Main        ADR   R0, data
+00000168: EBFFFFF1    ;             BL    Write_str
+0000016C: E24F001A    ;             ADR   R0, data2
+00000170: EBFFFFEF    ;             BL    Write_str
+00000174: EAFFFFFE    ; done        B     done
+00000178:             ; 
+00000178:             ; 
+00000178:             ; 
+00000178:             ; ; OS procedure to initialise the supervisor and user stacks
+00000178: E24FD0F4    ; Init_stacks   ADR   SP, super_stack + stack_size    ; set stack pointer for supervisor
+0000017C: E10F0000    ;               MRS   R0, CPSR                        ; load cpsr into r0
+00000180: E3C0001F    ;               BIC   R0, R0, #&1F                    ; clear mode field
+00000184: E380001F    ;               ORR   R0, R0, #cpsr_sys               ; set mode to system
+00000188: E12FF000    ;               MSR   CPSR, R0                        ; write back to CPSR
+0000018C: E24FD088    ;               ADR   SP, user_stack + stack_size     ; set SP for user
+00000190: E10F0000    ;               MRS   R0, CPSR                        ; load cpsr into r0
+00000194: E3C0001F    ;               BIC   R0, R0, #&1F                    ; clear mode field
+00000198: E3800013    ;               ORR   R0, R0, #cpsr_svc               ; set mode to supervisor
+0000019C: E12FF000    ;               MSR   CPSR, R0                        ; write back to CPSR
+000001A0:             ; 
+000001A0:             ; 
+000001A0:             ; ; OS procedure to initalise the LCD
+000001A0: E3A01001    ; Init_lcd      MOV   R1, #cmd_clear
+000001A4: E3A00000    ;               MOV   R0, #0
+000001A8: EB000017    ;               BL    LCD_write
+000001AC:             ; 
+000001AC: E10F0000    ; Init_program  MRS   R0, CPSR
+000001B0: E3C0001F    ;               BIC   R0, R0, #&1F
+000001B4: E3800010    ;               ORR   R0, R0, #cpsr_usr               ; set mode to user
+000001B8: E12FF000    ;               MSR   CPSR, R0                        ; write back to CPSR
+000001BC: EAFFFFE8    ;               B     Main                            ; branch to program main
+000001C0:             ; 
+000001C0: E92D4000    ; SVC_entry     STMFD  SP!, {LR}
+000001C4: EB000010    ;               BL     LCD_write
+000001C8: E8BD4000    ;               LDMFD  SP!, {LR}
+000001CC: E1B0F00E    ;               MOVS   PC, LR
+000001D0:             ; 
+000001D0:             ; ; LCD DRIVER:
+000001D0:             ; 
+000001D0:             ; ; Procedure to check if the LCD is ready & wait until it is
+000001D0: E92D4007    ; Wait_ready    STMFD SP!, {LR, R0, R1, R2}
+000001D4: E3A00201    ;               MOV   R0, #port_A                 ; set R0 to adr of port A
+000001D8: E5D01004    ;               LDRB  R1, [R0, #port_B_off]       ; load contents of port B
+000001DC: E3811004    ;               ORR   R1, R1, #lcd_rw             ; set r/w bit to 1
+000001E0: E3C11002    ;               BIC   R1, R1, #lcd_rs             ; set RS=0
+000001E4: E5C01004    ;               STRB  R1, [R0, #port_B_off]       ; write cmd to port B
+000001E8: E3811001    ; wr_loop       ORR   R1, R1, #lcd_e              ; set E=1
+000001EC: E5C01004    ;               STRB  R1, [R0, #port_B_off]       ; write data to port B
+000001F0: E5502000    ;               LDRB  R2, [R0]                    ; read our status bytes
+000001F4: E3C11001    ;               BIC   R1, R1, #lcd_e              ; set E=0
+000001F8: E5C01004    ;               STRB  R1, [R0, #port_B_off]       ; write command back
+000001FC: E2022080    ;               AND   R2, R2, #bit_7
+00000200: E2522080    ;               SUBS  R2, R2, #bit_7
+00000204: 0AFFFFF7    ;               BEQ   wr_loop               ; we are still busy, poll again
+00000208: E8BD8007    ;               LDMFD SP!, {PC, R0, R1, R2}       ; pop & return
+0000020C:             ; 
+0000020C:             ; ; procedure to either write a cmd or data to the lcd
+0000020C:             ; ; R0 (1/0) specifies the value of RS (0 - cmd, 1- data)
+0000020C:             ; ; R1 specifies the cmd/character
+0000020C: E92D400C    ; LCD_write     STMFD SP!, {LR, R2, R3}
+00000210: EBFFFFEE    ;               BL    Wait_ready                  ; wait for lcd to be ready
+00000214: E3A02201    ;               MOV   R2, #port_A                 ; load adr of port A into R2
+00000218: E5D23004    ;               LDRB  R3, [R2, #port_B_off]       ; load ctrl byte to r3
+0000021C: E3C33004    ;               BIC   R3, R3, #lcd_rw             ; set RW=0 (we're writing)
+00000220: E3C33002    ;               BIC   R3, R3, #lcd_rs             ; clear rs
+00000224: E1833080    ;               ORR   R3, R3, R0 lsl #1           ; set RS=R0
+00000228: E5C23004    ;               STRB  R3, [R2, #port_B_off]       ; store back in port B
+0000022C: E5421000    ;               STRB  R1, [R2]                    ; store our data
+00000230: E3833001    ;               ORR   R3, R3, #lcd_e              ; set E=1
+00000234: E5C23004    ;               STRB  R3, [R2, #port_B_off]       ; store back
+00000238: E3C33001    ;               BIC   R3, R3, #lcd_e              ; set E=0
+0000023C: E5C23004    ;               STRB  R3, [R2, #port_B_off]       ; store back
+00000240: E8BD800C    ;               LDMFD SP!, {PC, R2, R3}
+00000244:             ; 
+
+Symbol Table: Labels
+: stack_size                        00000080  Value
+: super_stack                       0000000C  Local -- ARM
+: user_stack                        0000008C  Local -- ARM
+: cpsr_sys                          0000001F  Value
+: cpsr_svc                          00000013  Value
+: cpsr_usr                          00000010  Value
+: port_A                            10000000  Value
+: port_B_off                        00000004  Value
+: bit_7                             00000080  Value
+: bit_2                             00000004  Value
+: bit_1                             00000002  Value
+: bit_0                             00000001  Value
+: lcd_rw                            00000004  Value
+: lcd_rs                            00000002  Value
+: lcd_e                             00000001  Value
+: cmd_clear                         00000001  Value
+: Write_char                        0000010C  Local -- ARM
+: Write_cmd                         00000120  Local -- ARM
+: Write_str                         00000134  Local -- ARM
+: next_byte                         0000013C  Local -- ARM
+: wstr_dne                          00000150  Local -- ARM
+: data                              00000154  Local -- ARM
+: data2                             0000015A  Local -- ARM
+: Main                              00000164  Local -- ARM
+: done                              00000174  Local -- ARM
+: Init_stacks                       00000178  Local -- ARM
+: Init_lcd                          000001A0  Local -- ARM
+: Init_program                      000001AC  Local -- ARM
+: SVC_entry                         000001C0  Local -- ARM
+: Wait_ready                        000001D0  Local -- ARM
+: wr_loop                           000001E8  Local -- ARM
+: LCD_write                         0000020C  Local -- ARM

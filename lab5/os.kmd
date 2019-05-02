@@ -1,0 +1,358 @@
+KMD
+00000000:             ; ;---------------------------------------------------------------------------
+00000000:             ; ;       Matt Walton
+00000000:             ; ;       Version 1.1
+00000000:             ; ;       26th February 2019
+00000000:             ; ;---------------------------------------------------------------------------
+00000000:             ; 
+00000000:             ; ; os.s
+00000000:             ; ; This contains the basic 'operating system' code
+00000000:             ; ; It initalises the devices, defines service routines,
+00000000:             ; ; and also contains the device driver for the HD44780 LCD controller
+00000000:             ; 
+00000000:             ;               ORG   0
+00000000: EA000089    ;               B     Init_stacks       ; define what to do on reset
+00000008:             ;               ORG   8
+00000008: EA000099    ;               B     SVC_entry         ; define what to do on svc
+0000000C:             ; 
+0000000C:             ; stack_size    EQU   &80               ; Define the stack size for both user and supervisor
+0000000C:             ; 
+0000000C:             ; super_stack   DEFS  stack_size
+0000008C:             ; user_stack    DEFS  stack_size
+0000010C:             ; 
+0000010C:             ; cpsr_sys      EQU   &1F
+0000010C:             ; cpsr_svc      EQU   &13
+0000010C:             ; cpsr_usr      EQU   &10
+0000010C:             ; 
+0000010C:             ; port_A        EQU   &10000000         ; statically define the base for the data port of the LCD
+0000010C:             ; port_B_off    EQU   &00000004         ; define the adr of port B as an offset to port A
+0000010C:             ; 
+0000010C:             ; bit_7         EQU   &80
+0000010C:             ; bit_2         EQU   &4
+0000010C:             ; bit_1         EQU   &2
+0000010C:             ; bit_0         EQU   &1
+0000010C:             ; 
+0000010C:             ; lcd_rw        EQU   bit_2
+0000010C:             ; lcd_rs        EQU   bit_1
+0000010C:             ; lcd_e         EQU   bit_0
+0000010C:             ; 
+0000010C:             ; cmd_clear     EQU   &1
+0000010C:             ; 
+0000010C:             ; timer_adr     EQU   &10000008         ; the address of the timer module
+0000010C:             ; piob_adr      EQU   &10000004         ; address of PIOB
+0000010C:             ; 
+0000010C: 00000000    ; timer_ms      DEFW  0                 ; timer's count in ms
+00000110: 00000000    ; timer_last    DEFW  0                 ; last reading from timer
+00000114:             ; 
+00000114:             ; svc_jmax      EQU   4
+00000114: 000002E8    ; svc_jumps     DEFW  LCD_write         ; SVC 0 = LCD_write
+00000118: 00000368    ;               DEFW  Timer_reset       ; SVC 1 = Timer_reset
+0000011C: 00000324    ;               DEFW  Timer_read        ; SVC 2 = Timer_read
+00000120: 00000390    ;               DEFW  Get_PIOB          ; SVC 3 = Get_PIOB
+00000124:             ; 
+00000124:             ; INCLUDE       part2.s              ; include our program code
+00000124:             ; ;---------------------------------------------------------------------------
+00000124:             ; ;       EX5: Counters and Timers (part 2)
+00000124:             ; ;       Matt Walton
+00000124:             ; ;       Version 1.0
+00000124:             ; ;       27th February 2019
+00000124:             ; ;
+00000124:             ; ;       This program implements a counter which counts up 1 per second
+00000124:             ; ;       and outputs onto the LCD display
+00000124:             ; ;
+00000124:             ; ;---------------------------------------------------------------------------
+00000124:             ; 
+00000124:             ; 
+00000124:             ; INCLUDE         lcd.s                         ; include our lcd library
+00000124:             ; ;---------------------------------------------------------------------------
+00000124:             ; ;       Matt Walton
+00000124:             ; ;       Version 1.0
+00000124:             ; ;       18th February 2019
+00000124:             ; ;
+00000124:             ; ;       This program implements my previous code for writing to an LCD
+00000124:             ; ;       but instead making sure the driver is run in supervisor mode
+00000124:             ; ;       and calls are made from user code to this via SVC calls.
+00000124:             ; ;
+00000124:             ; ;---------------------------------------------------------------------------
+00000124:             ; 
+00000124:             ; ; lcd.s
+00000124:             ; ; this provides functions to make calls to the LCD driver a bit nicer
+00000124:             ; 
+00000124:             ; lcd_code_clear  EQU   1
+00000124:             ; 
+00000124:             ; ; Procedure to write a character to the LCD using the SVC call
+00000124:             ; ; R0 = character
+00000124: E92D4003    ; LCD_Write_char  STMFD SP!, {LR, R1 ,R0}
+00000128: E1A01000    ;                 MOV   R1, R0            ; move our value at R0 to R1
+0000012C: E3A00001    ;                 MOV   R0, #1            ; we want to write a character
+00000130: EF000000    ;                 SVC   0                 ; Call our service routine
+00000134: E8BD8003    ;                 LDMFD SP!, {PC, R1, R0}
+00000138:             ; 
+00000138:             ; 
+00000138:             ; ; Procedure to send a command to the LCD controller
+00000138:             ; ; R0 = cmd
+00000138: E92D4003    ; LCD_Write_cmd   STMFD SP!, {LR, R1 ,R0}
+0000013C: E1A01000    ;                 MOV   R1, R0            ; move our value at R0 to R1
+00000140: E3A00000    ;                 MOV   R0, #0            ; we want to send a command
+00000144: EF000000    ;                 SVC   0                 ; Call our service routine
+00000148: E8BD8003    ;                 LDMFD SP!, {PC, R1, R0}
+0000014C:             ; 
+0000014C:             ; ; Procedure to write a string to the LCD
+0000014C:             ; ; R0 = start address of string
+0000014C:             ; ; The procedure will continue until a null byte string terminator is hit
+0000014C:             ; 
+0000014C: E92D4003    ; LCD_Write_str   STMFD SP!, {LR, R0, R1}     ; we're using R2, and want to push the LR to the st
+                      ; ack
+00000150: E1A01000    ;                 MOV   R1, R0            ; move R0 > R1
+00000154: E4D10001    ; next_byte       LDRB  R0, [R1], #1      ; load our byte into R2 and increment
+00000158: E3500000    ;                 CMP   R0, #0            ; are we at null byte? end of string?
+0000015C: 0A000001    ;                 BEQ   wstr_dne
+00000160:             ; 
+00000160: EBFFFFEF    ;                 BL    LCD_Write_char
+00000164: EAFFFFFA    ;                 BAL   next_byte
+00000168: E8BD8003    ; wstr_dne        LDMFD SP!, {PC, R0, R1}     ; pop our registers back and branch back
+0000016C:             ; 
+0000016C:             ; ; Procedure to clear the screen of the LCD
+0000016C: E92D4001    ; LCD_Clear       STMFD SP!, {LR, R0}
+00000170: E3A00001    ;                 MOV   R0, #lcd_code_clear
+00000174: EBFFFFEF    ;                 BL    LCD_Write_cmd
+00000178: E8BD8001    ;                 LDMFD SP!, {PC, R0}
+0000017C:             ; 
+0000017C: 00000000    ; counter         DEFW    0                     ; define our memory location for our counter
+00000180:             ; 
+00000180:             ; 
+00000180: EF000001    ; Main            SVC     1                     ; reset counter
+00000184: EF000002    ; counter_loop    SVC     2                     ; get counter reading
+00000188: EB000018    ;                 BL      Divide1000            ; convert into seconds
+0000018C: E24F1018    ;                 ADR     R1, counter           ; get counter address
+00000190: E5111000    ;                 LDR     R1, [R1]              ; load counter value
+00000194: E1500001    ;                 CMP     R0, R1                ; has the value changed?
+00000198: 0AFFFFF9    ;                 BEQ     counter_loop          ; no it hasn't
+0000019C: E24F1028    ;                 ADR     R1, counter           ; our value has changed
+000001A0: E5010000    ;                 STR     R0, [R1]              ; store back
+000001A4: EB000000    ;                 BL      Print                 ; print out
+000001A8: EAFFFFF5    ;                 B       counter_loop          ; loop
+000001AC:             ; 
+000001AC:             ; 
+000001AC:             ; ; Print procedure
+000001AC:             ; ; R0 = number to print
+000001AC:             ; ; Pushes 5 values to stack which are the ascii digits
+000001AC: E92D4007    ; Print           STMFD   SP!, {LR, R0, R1, R2}
+000001B0: EBFFFFED    ;                 BL      LCD_Clear             ; clear the screen
+000001B4: E3A02005    ;                 MOV     R2, #5
+000001B8: E2422001    ; print_bcd_loop  SUB     R2, R2, #1
+000001BC: EB000011    ;                 BL      Divide10
+000001C0: E2811030    ;                 ADD     R1, R1, #&30          ; add 30 for ascii
+000001C4: E92D0002    ;                 PUSH    {R1}                  ; push to stack
+000001C8: E3520000    ;                 CMP     R2, #0
+000001CC: CAFFFFF9    ;                 BGT     print_bcd_loop        ; loop 5 times for each digit
+000001D0: E3A02005    ;                 MOV     R2, #5
+000001D4: E8BD0001    ; print_loop      POP     {R0}                  ; pop into R0
+000001D8: EBFFFFD1    ;                 BL      LCD_Write_char        ; write to screen
+000001DC: E2422001    ;                 SUB     R2, R2, #1
+000001E0: E3520000    ;                 CMP     R2, #0
+000001E4: CAFFFFFA    ;                 BGT     print_loop            ; loop 5 times
+000001E8: E8BD8007    ;                 LDMFD   SP!, {PC, R0, R1, R2}
+000001EC:             ; 
+000001EC:             ; ; Divide1000 procedure
+000001EC:             ; ; R0 = number to divide
+000001EC:             ; ; returns the divided value in R0
+000001EC: 00418938    ; divisor1000     DEFW    &418938               ; ~2^32/1000
+000001F0: E92D4006    ; Divide1000      STMFD   SP!, {LR, R1, R2}
+000001F4: E24F1010    ;                 ADR     R1, divisor1000
+000001F8: E5111000    ;                 LDR     R1, [R1]
+000001FC: E0802190    ;                 UMULL   R2, R0, R0, R1        ; we're essentially doing n * 2^32/1000 then divi
+                      ; ding by 2^32
+00000200: E8BD8006    ;                 LDMFD   SP!, {PC, R1, R2}
+00000204:             ; 
+00000204:             ; ; Divide10 procedure
+00000204:             ; ; R0 = number to divide
+00000204:             ; ; returns the divided value in R0, remainder in R1
+00000204: 1999999A    ; divisor10       DEFW    &1999999A             ; ~2^32/10
+00000208: E92D400C    ; Divide10        STMFD   SP!, {LR, R2, R3}
+0000020C: E24F1010    ;                 ADR     R1, divisor10
+00000210: E5111000    ;                 LDR     R1, [R1]
+00000214: E0832190    ;                 UMULL   R2, R3, R0, R1        ; we're essentially doing n * 2^32/1000 then divi
+                      ; ding by 2^32
+00000218: E3A0100A    ;                 MOV     R1, #10
+0000021C: E0010193    ;                 MUL     R1, R3, R1            ; mul back by 10
+00000220: E0401001    ;                 SUB     R1, R0, R1            ; remainder into r1
+00000224: E1A00003    ;                 MOV     R0, R3                ; move divided value to R0
+00000228: E8BD800C    ;                 LDMFD   SP!, {PC, R2, R3}
+0000022C:             ; 
+0000022C:             ; 
+0000022C:             ; 
+0000022C:             ; ; OS procedure to initialise the supervisor and user stacks
+0000022C: E24FDF6A    ; Init_stacks   ADR   SP, super_stack + stack_size    ; set stack pointer for supervisor
+00000230: E10F0000    ;               MRS   R0, CPSR                        ; load cpsr into r0
+00000234: E3C0001F    ;               BIC   R0, R0, #&1F                    ; clear mode field
+00000238: E380001F    ;               ORR   R0, R0, #cpsr_sys               ; set mode to system
+0000023C: E12FF000    ;               MSR   CPSR, R0                        ; write back to CPSR
+00000240: E24FDF4F    ;               ADR   SP, user_stack + stack_size     ; set SP for user
+00000244: E10F0000    ;               MRS   R0, CPSR                        ; load cpsr into r0
+00000248: E3C0001F    ;               BIC   R0, R0, #&1F                    ; clear mode field
+0000024C: E3800013    ;               ORR   R0, R0, #cpsr_svc               ; set mode to supervisor
+00000250: E12FF000    ;               MSR   CPSR, R0                        ; write back to CPSR
+00000254:             ; 
+00000254:             ; 
+00000254:             ; ; OS procedure to initalise the LCD
+00000254: E3A01001    ; Init_lcd      MOV   R1, #cmd_clear
+00000258: E3A00000    ;               MOV   R0, #0
+0000025C: EF000000    ;               SVC   0
+00000260:             ; 
+00000260: E10F0000    ; Init_program  MRS   R0, CPSR
+00000264: E3C0001F    ;               BIC   R0, R0, #&1F
+00000268: E3800010    ;               ORR   R0, R0, #cpsr_usr               ; set mode to user
+0000026C: E12FF000    ;               MSR   CPSR, R0                        ; write back to CPSR
+00000270: EAFFFFC2    ;               B     Main                            ; branch to program main
+00000274:             ; 
+00000274:             ; ;TODO: make this use r14 pls
+00000274: E92D4000    ; SVC_entry     STMFD SP!, {LR}
+00000278: E51EE004    ;               LDR   R14, [LR, #-4]                   ; copy the calling inst (ret adr - 4) to R
+                      ; 1
+0000027C: E3CEE4FF    ;               BIC   R14, R14, #&FF000000             ; mask off opcode
+00000280: E35E0004    ;               CMP   R14, #svc_jmax                   ; validation of svc code
+00000284: 5A000006    ;               BPL   svc_done                         ; svc code > max
+00000288: E35E0000    ;               CMP   R14, #0                          ; svc code < 0
+0000028C: 4A000004    ;               BMI   svc_done
+00000290: E92D0001    ;               STMFD SP!, {R0}                        ; push r0
+00000294: E24F0F62    ;               ADR   R0, svc_jumps                    ; get adr of jump table
+00000298: E080E10E    ;               ADD   R14, R0, R14 LSL #2              ; add R0 * 4
+0000029C: E8BD0001    ;               LDMFD SP!, {R0}                        ; pop r0
+000002A0: E51EF000    ;               LDR   PC, [R14]
+000002A4:             ; 
+000002A4: E8BD4000    ; svc_done      LDMFD SP!, {LR}
+000002A8: E1B0F00E    ;               MOVS  PC, LR
+000002AC:             ; 
+000002AC:             ; ; LCD DRIVER:
+000002AC:             ; 
+000002AC:             ; ; Procedure to check if the LCD is ready & wait until it is
+000002AC: E92D4007    ; Wait_ready    STMFD SP!, {LR, R0, R1, R2}
+000002B0: E3A00201    ;               MOV   R0, #port_A                 ; set R0 to adr of port A
+000002B4: E5D01004    ;               LDRB  R1, [R0, #port_B_off]       ; load contents of port B
+000002B8: E3811004    ;               ORR   R1, R1, #lcd_rw             ; set r/w bit to 1
+000002BC: E3C11002    ;               BIC   R1, R1, #lcd_rs             ; set RS=0
+000002C0: E5C01004    ;               STRB  R1, [R0, #port_B_off]       ; write cmd to port B
+000002C4: E3811001    ; wr_loop       ORR   R1, R1, #lcd_e              ; set E=1
+000002C8: E5C01004    ;               STRB  R1, [R0, #port_B_off]       ; write data to port B
+000002CC: E5502000    ;               LDRB  R2, [R0]                    ; read our status bytes
+000002D0: E3C11001    ;               BIC   R1, R1, #lcd_e              ; set E=0
+000002D4: E5C01004    ;               STRB  R1, [R0, #port_B_off]       ; write command back
+000002D8: E2022080    ;               AND   R2, R2, #bit_7
+000002DC: E2522080    ;               SUBS  R2, R2, #bit_7
+000002E0: 0AFFFFF7    ;               BEQ   wr_loop               ; we are still busy, poll again
+000002E4: E8BD8007    ;               LDMFD SP!, {PC, R0, R1, R2}       ; pop & return
+000002E8:             ; 
+000002E8:             ; ; procedure to either write a cmd or data to the lcd
+000002E8:             ; ; R0 (1/0) specifies the value of RS (0 - cmd, 1- data)
+000002E8:             ; ; R1 specifies the cmd/character
+000002E8: E92D400C    ; LCD_write     STMFD SP!, {LR, R2, R3}
+000002EC: EBFFFFEE    ;               BL    Wait_ready                  ; wait for lcd to be ready
+000002F0: E3A02201    ;               MOV   R2, #port_A                 ; load adr of port A into R2
+000002F4: E5D23004    ;               LDRB  R3, [R2, #port_B_off]       ; load ctrl byte to r3
+000002F8: E3C33004    ;               BIC   R3, R3, #lcd_rw             ; set RW=0 (we're writing)
+000002FC: E3C33002    ;               BIC   R3, R3, #lcd_rs             ; clear rs
+00000300: E1833080    ;               ORR   R3, R3, R0 lsl #1           ; set RS=R0
+00000304: E5C23004    ;               STRB  R3, [R2, #port_B_off]       ; store back in port B
+00000308: E5421000    ;               STRB  R1, [R2]                    ; store our data
+0000030C: E3833001    ;               ORR   R3, R3, #lcd_e              ; set E=1
+00000310: E5C23004    ;               STRB  R3, [R2, #port_B_off]       ; store back
+00000314: E3C33001    ;               BIC   R3, R3, #lcd_e              ; set E=0
+00000318: E5C23004    ;               STRB  R3, [R2, #port_B_off]       ; store back
+0000031C: E8BD400C    ;               LDMFD SP!, {LR, R2, R3}
+00000320: EAFFFFDF    ;               B     svc_done
+00000324:             ; 
+00000324:             ; ; TIMER code
+00000324:             ; 
+00000324:             ; ; procudure to poll the timer and returns the current elapsed ms since reset
+00000324:             ; ; returns in R0
+00000324: E92D400E    ; Timer_read    STMFD   SP!, {LR, R1, R2, R3}
+00000328: E24F0E22    ;               ADR     R0, timer_last            ; get adr of last clock reading
+0000032C: E5100000    ;               LDR     R0, [R0]                  ; load
+00000330: E3A01281    ;               MOV     R1, #timer_adr            ; get address of the clock
+00000334: E5111000    ;               LDR     R1, [R1]                  ; read clock
+00000338: E0510000    ;               SUBS    R0, R1, R0                ; find difference between last reading
+0000033C: 5A000000    ;               BPL     poll_pos                  ; if >= 0 then cont
+00000340: E2800C01    ;               ADD     R0, R0, #256              ; if not, add 256
+00000344: E24F2D09    ; poll_pos      ADR     R2, timer_ms              ; update timer memory
+00000348: E5123000    ;               LDR     R3, [R2]
+0000034C: E0803003    ;               ADD     R3, R0, R3
+00000350: E5023000    ;               STR     R3, [R2]
+00000354: E24F0F93    ;               ADR     R0, timer_last            ; update last reading
+00000358: E5001000    ;               STR     R1, [R0]
+0000035C: E1A00003    ;               MOV     R0, R3
+00000360: E8BD400E    ;               LDMFD   SP!, {LR, R1, R2, R3}     ; return
+00000364: EAFFFFCE    ;               B       svc_done
+00000368:             ; 
+00000368:             ; ; procedure to reset the timer to 0
+00000368: E92D4003    ; Timer_reset   STMFD   SP!, {LR, R0, R1}
+0000036C: E24F0F9A    ;               ADR     R0, timer_ms
+00000370: E3A01000    ;               MOV     R1, #0
+00000374: E5001000    ;               STR     R1, [R0]
+00000378: E3A01281    ;               MOV     R1, #timer_adr            ; get a timer reading to make sure we're accura
+                      ; te
+0000037C: E5111000    ;               LDR     R1, [R1]
+00000380: E24F0F9E    ;               ADR     R0, timer_last            ; update last reading
+00000384: E5001000    ;               STR     R1, [R0]
+00000388: E8BD4003    ;               LDMFD   SP!, {LR, R0, R1}
+0000038C: EAFFFFC4    ;               B       svc_done
+00000390:             ; 
+00000390:             ; 
+00000390:             ; ; button SVC routine
+00000390: E3A00241    ; Get_PIOB      MOV     R0, #piob_adr
+00000394: E5500000    ;               LDRB    R0, [R0]
+00000398: EAFFFFC1    ;               B       svc_done
+0000039C:             ; 
+
+Symbol Table: Labels
+: stack_size                        00000080  Value
+: super_stack                       0000000C  Local -- ARM
+: user_stack                        0000008C  Local -- ARM
+: cpsr_sys                          0000001F  Value
+: cpsr_svc                          00000013  Value
+: cpsr_usr                          00000010  Value
+: port_A                            10000000  Value
+: port_B_off                        00000004  Value
+: bit_7                             00000080  Value
+: bit_2                             00000004  Value
+: bit_1                             00000002  Value
+: bit_0                             00000001  Value
+: lcd_rw                            00000004  Value
+: lcd_rs                            00000002  Value
+: lcd_e                             00000001  Value
+: cmd_clear                         00000001  Value
+: timer_adr                         10000008  Value
+: piob_adr                          10000004  Value
+: timer_ms                          0000010C  Local -- ARM
+: timer_last                        00000110  Local -- ARM
+: svc_jmax                          00000004  Value
+: svc_jumps                         00000114  Local -- ARM
+: lcd_code_clear                    00000001  Value
+: LCD_Write_char                    00000124  Local -- ARM
+: LCD_Write_cmd                     00000138  Local -- ARM
+: LCD_Write_str                     0000014C  Local -- ARM
+: next_byte                         00000154  Local -- ARM
+: wstr_dne                          00000168  Local -- ARM
+: LCD_Clear                         0000016C  Local -- ARM
+: counter                           0000017C  Local -- ARM
+: Main                              00000180  Local -- ARM
+: counter_loop                      00000184  Local -- ARM
+: Print                             000001AC  Local -- ARM
+: print_bcd_loop                    000001B8  Local -- ARM
+: print_loop                        000001D4  Local -- ARM
+: divisor1000                       000001EC  Local -- ARM
+: Divide1000                        000001F0  Local -- ARM
+: divisor10                         00000204  Local -- ARM
+: Divide10                          00000208  Local -- ARM
+: Init_stacks                       0000022C  Local -- ARM
+: Init_lcd                          00000254  Local -- ARM
+: Init_program                      00000260  Local -- ARM
+: SVC_entry                         00000274  Local -- ARM
+: svc_done                          000002A4  Local -- ARM
+: Wait_ready                        000002AC  Local -- ARM
+: wr_loop                           000002C4  Local -- ARM
+: LCD_write                         000002E8  Local -- ARM
+: Timer_read                        00000324  Local -- ARM
+: poll_pos                          00000344  Local -- ARM
+: Timer_reset                       00000368  Local -- ARM
+: Get_PIOB                          00000390  Local -- ARM
