@@ -12,15 +12,15 @@ KMD
 00000000:             ; ; Initialises devices, defines service & interrupt routines
 00000000:             ; 
 00000000:             ;                 ORG     0x0
-00000000: EA00002D    ;                 B       OS_init                           ; defines what to do on reset
+00000000: EA00006B    ;                 B       OS_init                   ; defines what to do on reset
 00000008:             ;                 ORG     0x8
-00000008: EA00004B    ;                 B       OS_svc                            ; defines what to do on svc
+00000008: EA000086    ;                 B       OS_svc                    ; defines what to do on svc
 00000018:             ;                 ORG     0x18
-00000018: EA000055    ;                 B       OS_irq                            ; irq handler
+00000018: EA000090    ;                 B       OS_irq                    ; irq handler
 0000001C:             ; 
 00000020:             ;                 ORG     0x20
 00000020:             ; 
-00000020:             ;                 INCLUDE constants.s                       ; include our constants
+00000020:             ;                 INCLUDE constants.s
 00000020:             ; ;--------------------------------------------------------
 00000020:             ; ;     Matt Walton
 00000020:             ; ;     Version 1.0
@@ -30,7 +30,7 @@ KMD
 00000020:             ; ;--------------------------------------------------------
 00000020:             ; 
 00000020:             ; ; constants.s
-00000020:             ; ; Defines all constants for the operating system
+00000020:             ; ; Defines some constants for the system
 00000020:             ; 
 00000020:             ; bit_7           EQU     &80
 00000020:             ; bit_6           EQU     &40
@@ -41,9 +41,9 @@ KMD
 00000020:             ; bit_1           EQU     &2
 00000020:             ; bit_0           EQU     &1
 00000020:             ; 
-00000020:             ; stack_size      EQU     0x30                ; define the stack size for all user modes
+00000020:             ; stack_size      EQU     0x80                      ; define the stack size for all user modes
 00000020:             ; 
-00000020:             ; cpsr_usr        EQU     0x10                ; define the CPSR codes for each mode
+00000020:             ; cpsr_usr        EQU     0x10                      ; define the CPSR codes for each mode
 00000020:             ; cpsr_fiq        EQU     0x11
 00000020:             ; cpsr_irq        EQU     0x12
 00000020:             ; cpsr_svc        EQU     0x13
@@ -51,11 +51,12 @@ KMD
 00000020:             ; cpsr_und        EQU     0x1B
 00000020:             ; cpsr_sys        EQU     0x1F
 00000020:             ; 
-00000020:             ; base_adr        EQU     0x10000000          ; base address for i/o
-00000020:             ; piob_ofs        EQU     0x4                 ; offset for port b
+00000020:             ; base_adr        EQU     0x10000000                ; base address for i/o
+00000020:             ; piob_ofs        EQU     0x4                       ; offset for port b
 00000020:             ; timer_ofs       EQU     0x8
-00000020:             ; ire_ofs         EQU     &1c                 ; offset for interupt enable
-00000020:             ; ira_ofs         EQU     &18                 ; offset for interrupt active
+00000020:             ; timer_c_ofs     EQU     0xC
+00000020:             ; ire_ofs         EQU     &1c                       ; offset for interupt enable
+00000020:             ; ira_ofs         EQU     &18                       ; offset for interrupt active
 00000020:             ; 
 00000020:             ; irq_mask        EQU     &80
 00000020:             ; 
@@ -63,398 +64,1146 @@ KMD
 00000020:             ; ir_ubutton      EQU     bit_6
 00000020:             ; ir_lbutton      EQU     bit_7
 00000020:             ; 
+00000020:             ; piob_button     EQU     bit_3
 00000020:             ; 
-00000020:             ; usr_stack       DEFS    stack_size                        ; define the space for all the stacks
-00000050:             ; irq_stack       DEFS    stack_size
-00000080:             ; svc_stack       DEFS    stack_size
-000000B0:             ; 
-000000B0: 000000C1    ; ir_enabled      DEFW    ir_ubutton OR ir_lbutton OR ir_timer
-000000B4:             ; 
-000000B4:             ; svc_jmax        EQU     2
-000000B4: 000001F8    ; svc_jumps       DEFW    LCD_write                         ; SVC 0 = LCD_write
-000000B8: 00000230    ;                 DEFW    LCD_set_light                     ; SVC 1 = LCD_set_light
-000000BC:             ; 
-000000BC:             ; ; OS_init - initalises the stacks, interrupts, drivers, etc
-000000BC:             ; 
-000000BC:             ; OS_init
-000000BC: E10F0000    ;                 MRS      R0, CPSR                         ; load CPSR into r0
-000000C0: E3C0001F    ;                 BIC      R0, R0, #cpsr_sys                ; clear usermode
-000000C4: E380001F    ;                 ORR      R0, R0, #cpsr_sys                ; set user to system
-000000C8: E12FF000    ;                 MSR      CPSR, R0                         ; write back cpsr
-000000CC: E24FD084    ;                 ADR      SP, usr_stack + stack_size       ; setup usr stack
-000000D0:             ; 
-000000D0: E3C0001F    ;                 BIC      R0, R0, #cpsr_sys                ; do the same for IRQ
-000000D4: E3800012    ;                 ORR      R0, R0, #cpsr_irq
-000000D8: E12FF000    ;                 MSR      CPSR, R0
-000000DC: E24FD064    ;                 ADR      SP, irq_stack + stack_size
-000000E0:             ; 
-000000E0: E3C0001F    ;                 BIC      R0, R0, #cpsr_sys                ; and for svc
-000000E4: E3800013    ;                 ORR      R0, R0, #cpsr_svc
-000000E8: E12FF000    ;                 MSR      CPSR, R0
-000000EC: E24FD044    ;                 ADR      SP, svc_stack + stack_size
-000000F0:             ; 
-000000F0: E3C0001F    ;                 BIC      R0, R0, #cpsr_sys                ; switch back to svc
-000000F4: E3800013    ;                 ORR      R0, R0, #cpsr_svc
-000000F8: E12FF000    ;                 MSR      CPSR, R0
-000000FC:             ; 
-000000FC:             ; ; OS procedure to enable IRQ interrupts
-000000FC:             ; 
-000000FC: E24F0054    ; OS_en_irq       ADR     R0, ir_enabled                    ; load enabled flags
-00000100: E5100000    ;                 LDR     R0, [R0]
-00000104: E3A01201    ;                 MOV     R1, #base_adr
-00000108: E281101C    ;                 ADD     R1, R1, #ire_ofs
-0000010C: E5010000    ;                 STR     R0, [R1]                          ; enable our interrupts
-00000110: E10F0000    ;                 MRS     R0, CPSR
-00000114: E3C00080    ;                 BIC     R0, R0, #irq_mask                 ; enable IRQ on CPU
-00000118: E12FF000    ;                 MSR     CPSR, R0
-0000011C:             ; 
-0000011C: E3A01001    ; OS_init_lcd     MOV     R1, #lcd_cmd_clr                  ; clear our lcd screen
-00000120: E3A00000    ;                 MOV     R0, #0                            ; 0 = command
-00000124: EF000000    ;                 SVC     0
-00000128:             ; 
-00000128: E10F0000    ; OS_program      MRS     R0, CPSR
-0000012C: E3C0001F    ;                 BIC     R0, R0, #cpsr_sys
-00000130: E3800010    ;                 ORR     R0, R0, #cpsr_usr                 ; set mode to user
-00000134: E12FF000    ;                 MSR     CPSR,  R0
-00000138: EA0000B9    ;                 B       Main                              ; branch to main program
-0000013C:             ; 
-0000013C:             ; ; SVC entry point
-0000013C:             ; 
-0000013C: E92D4000    ; OS_svc          STMFD   SP!, {LR}
-00000140: E51EE004    ;                 LDR     R14, [LR, #-4]                    ; copy the calling inst (ret adr - 4)
-                      ;  to R1
-00000144: E3CEE4FF    ;                 BIC     R14, R14, #&FF000000              ; mask off opcode
-00000148: E35E0002    ;                 CMP     R14, #svc_jmax                    ; validation of svc code
-0000014C: 5A000006    ;                 BPL     svc_done                          ; svc code > max
-00000150: E35E0000    ;                 CMP     R14, #0                           ; svc code < 0
-00000154: 4A000004    ;                 BMI     svc_done
-00000158: E92D0001    ;                 STMFD   SP!, {R0}                         ; push r0
-0000015C: E24F00B0    ;                 ADR     R0, svc_jumps                     ; get adr of jump table
-00000160: E080E10E    ;                 ADD     R14, R0, R14 LSL #2               ; add R0 * 4
-00000164: E8BD0001    ;                 LDMFD   SP!, {R0}                         ; pop r0
-00000168: E51EF000    ;                 LDR     PC, [R14]
-0000016C:             ; 
-0000016C:             ; ; procedure to be called at the end of a service routine, returns us back
-0000016C: E8BD4000    ; svc_done        LDMFD   SP!, {LR}
-00000170: E1B0F00E    ;                 MOVS    PC, LR
-00000174:             ; 
-00000174:             ; ; Interrupt service routine
-00000174:             ; 
-00000174: E24EE004    ; OS_irq          SUB     LR, LR, #4
-00000178: E92D4007    ;                 STMFD   SP!, {R0-R2, LR}                 ; Store working regs & return adr
-0000017C: E3A01201    ;                 MOV     R1, #base_adr                    ; check which interrupt fired
-00000180: E2811018    ;                 ADD     R1, R1, #ira_ofs
-00000184: E5510000    ;                 LDRB    R0, [R1]
-00000188: E3100040    ;                 TST     R0, #ir_ubutton                  ; check if upper button
-0000018C: 13C00040    ;                 BICNE   R0, R0, #ir_ubutton              ; mark done
-00000190: 1B000007    ;                 BLNE    Ubutton_press                    ; run routine
-00000194: E3100080    ;                 TST     R0, #ir_lbutton                  ; check lower button
-00000198: 13C00080    ;                 BICNE   R0, R0, #ir_lbutton
-0000019C: 1B000005    ;                 BLNE    Lbutton_press
-000001A0: E3100001    ;                 TST     R0, #ir_timer                    ; check timer
-000001A4: 13C00001    ;                 BICNE   R0, R0, #ir_timer
-000001A8: 1B00002F    ;                 BLNE    Clock_update
-000001AC: E5410000    ;                 STRB    R0, [R1]                         ; acknowledge interrupt
-000001B0: E8FD8007    ; isr_done        LDMFD   SP!, {R0-R2, PC}^                ; restore & return
+00000020:             ; max_hours       EQU     24
+00000020:             ; max_minutes     EQU     60
+00000020:             ; 
+00000020:             ; fpga_adr        EQU     0x20000000
+00000020:             ; 
+00000020:             ; 
+00000020:             ; usr_stack       DEFS    stack_size                ; define the space for all the stacks
+000000A0:             ; irq_stack       DEFS    stack_size
+00000120:             ; svc_stack       DEFS    stack_size
+000001A0:             ; 
+000001A0: 000000C1    ; ir_enabled      DEFW    ir_ubutton OR ir_lbutton OR ir_timer
+000001A4:             ; 
+000001A4:             ; svc_jmax        EQU     4
+000001A4: 000002E8    ; svc_jumps       DEFW    LCD_write                 ; SVC 0 = LCD_write
+000001A8: 00000320    ;                 DEFW    LCD_set_light             ; SVC 1 = LCD_set_light
+000001AC: 000002A0    ;                 DEFW    Get_PIOB                  ; SVC 2 = get piob
+000001B0: 00000344    ;                 DEFW    Buzzer_set                ; SVC 3 = set buzzer on/off
 000001B4:             ; 
-000001B4: E1A0F00E    ; Ubutton_press   MOV     PC, LR
-000001B8: E1A0F00E    ; Lbutton_press   MOV     PC, LR
-000001BC:             ; 
-000001BC:             ; ; include drivers
-000001BC:             ;                 INCLUDE drivers/lcd.s
-000001BC:             ; ;---------------------------------------------------------------------------
-000001BC:             ; ;       Matt Walton
-000001BC:             ; ;       Version 1.0
-000001BC:             ; ;       19th March 2019
-000001BC:             ; ;
-000001BC:             ; ;       This is an implementation for a LCD Driver
-000001BC:             ; ;
-000001BC:             ; ;---------------------------------------------------------------------------
-000001BC:             ; 
-000001BC:             ; lcd_cmd_clr   EQU   &1
-000001BC:             ; lcd_rw        EQU   bit_2
-000001BC:             ; lcd_rs        EQU   bit_1
-000001BC:             ; lcd_e         EQU   bit_0
-000001BC:             ; lcd_light     EQU   bit_5
-000001BC:             ; 
-000001BC:             ; 
-000001BC:             ; ; Procedure to check if the LCD is ready & wait until it is
-000001BC: E92D4007    ; LCD_ready     STMFD SP!, {LR, R0, R1, R2}
-000001C0: E3A00201    ;               MOV   R0, #base_adr               ; portA adr
-000001C4: E5D01004    ;               LDRB  R1, [R0, #piob_ofs]         ; load contents of port B
-000001C8: E3811004    ;               ORR   R1, R1, #lcd_rw             ; set r/w bit to 1
-000001CC: E3C11002    ;               BIC   R1, R1, #lcd_rs             ; set RS=0
-000001D0: E5C01004    ;               STRB  R1, [R0, #piob_ofs]         ; write cmd to port B
-000001D4: E3811001    ; wr_loop       ORR   R1, R1, #lcd_e              ; set E=1
-000001D8: E5C01004    ;               STRB  R1, [R0, #piob_ofs]         ; write data to port B
-000001DC: E5502000    ;               LDRB  R2, [R0]                    ; read our status bytes
-000001E0: E3C11001    ;               BIC   R1, R1, #lcd_e              ; set E=0
-000001E4: E5C01004    ;               STRB  R1, [R0, #piob_ofs]         ; write command back
-000001E8: E2022080    ;               AND   R2, R2, #bit_7
-000001EC: E2522080    ;               SUBS  R2, R2, #bit_7
-000001F0: 0AFFFFF7    ;               BEQ   wr_loop                     ; we are still busy, poll again
-000001F4: E8BD8007    ;               LDMFD SP!, {PC, R0, R1, R2}       ; pop & return
-000001F8:             ; 
-000001F8:             ; ; procedure to either write a cmd or data to the lcd
-000001F8:             ; ; R0 (1/0) specifies the value of RS (0 - cmd, 1- data)
-000001F8:             ; ; R1 specifies the cmd/character
-000001F8: E92D400C    ; LCD_write     STMFD SP!, {LR, R2, R3}
-000001FC: EBFFFFEE    ;               BL    LCD_ready                   ; wait for lcd to be ready
-00000200: E3A02201    ;               MOV   R2, #base_adr               ; load adr of port A into R2
-00000204: E5D23004    ;               LDRB  R3, [R2, #piob_ofs]         ; load ctrl byte to r3
-00000208: E3C33006    ;               BIC   R3, R3, #(lcd_rw OR lcd_rs) ; set RW=0 & RS=0 (we're writing)
-0000020C: E1833080    ;               ORR   R3, R3, R0 lsl #1           ; set RS=R0
-00000210: E5C23004    ;               STRB  R3, [R2, #piob_ofs]         ; store back in port B
-00000214: E5421000    ;               STRB  R1, [R2]                    ; store our data
-00000218: E3833001    ;               ORR   R3, R3, #lcd_e              ; set E=1
-0000021C: E5C23004    ;               STRB  R3, [R2, #piob_ofs]         ; store back
-00000220: E3C33001    ;               BIC   R3, R3, #lcd_e              ; set E=0
-00000224: E5C23004    ;               STRB  R3, [R2, #piob_ofs]         ; store back
-00000228: E8BD400C    ;               LDMFD SP!, {LR, R2, R3}
-0000022C: EAFFFFCE    ;               B     svc_done
-00000230:             ; 
-00000230:             ; ; procedure to set the LCD backlight to on/off
-00000230:             ; ; R0 specifies 0 for off and 1 for on
-00000230:             ; 
-00000230: E92D4006    ; LCD_set_light STMFD SP!, {LR, R1, R2}
-00000234: E3A01201    ;               MOV   R1, #base_adr
-00000238: E5D12004    ;               LDRB  R2, [R1, #piob_ofs]         ; load piob
-0000023C: E3500000    ;               CMP   R0, #0                      ; check if we wanna turn it off
-00000240: 03C22020    ;               BICEQ R2, R2, #lcd_light          ; clear bit if 0
-00000244: 13822020    ;               ORRNE R2, R2, #lcd_light          ; activate bit if 1
-00000248: E5C12004    ;               STRB  R2, [R1, #piob_ofs]         ; save back
-0000024C: E8BD4006    ;               LDMFD SP!, {LR, R1, R2}
-00000250: EAFFFFC5    ;               B     svc_done
-00000254:             ; 
-00000254:             ; 
-00000254:             ; ; include components
-00000254:             ;                 INCLUDE clock.s
-00000254:             ; ;--------------------------------------------------------
-00000254:             ; ;     Matt Walton
-00000254:             ; ;     Version 1.0
-00000254:             ; ;     29th April 2019
-00000254:             ; ;
-00000254:             ; ;     EX9 - Final Project (Alarm Clock)
-00000254:             ; ;--------------------------------------------------------
-00000254:             ; 
-00000254:             ; ; clock.s
-00000254:             ; ; This contains the code for keeping track of the current time
-00000254:             ; 
-00000254: 00002328    ; clock_time      DEFW    9000                 ; current time since midnight in seconds
-00000258: 00000000    ; clock_count     DEFW    0                 ; count to keep track before incrementing seconds
-0000025C:             ; 
-0000025C: 00000000    ; clock_mode      DEFW    0                 ; 0 = 24 hours clock, 1 = 12 hour am/pm clock
-00000260: 00000000    ; clock_show      DEFW    0                 ; whether to display the time or not (disabled when m
-                      ; enu open etc)
-00000264: 00000000    ; clock_secs      DEFW    0                 ; whether to display seconds on the clock
-00000268:             ; 
-00000268:             ; secs_in_min     EQU     60
-00000268:             ; secs_in_hour    EQU     3600
-00000268: 00015180    ; secs_in_day     DEFW    86400
-0000026C:             ; 
-0000026C:             ; colon_code      EQU     0x3A              ; ascii code for :
-0000026C:             ; 
-0000026C:             ; ; Called by the timer interrupt every 256ms, so count to 3 then add a second
-0000026C: E92D400F    ; Clock_update    STMFD   SP!, {LR, R0-R3}
-00000270: E24F0020    ;                 ADR     R0, clock_count
-00000274: E5101000    ;                 LDR     R1, [R0]
-00000278: E3510003    ;                 CMP     R1, #3            ; check if we need to update the time
-0000027C: 12811001    ;                 ADDNE   R1, R1, #1        ; add 1 to count
-00000280: 03A01000    ;                 MOVEQ   R1, #0            ; reset if equal
-00000284: 1A000005    ;                 BNE     cu_done
-00000288: E24F203C    ;                 ADR     R2, clock_time    ; update clock time
-0000028C: E5123000    ;                 LDR     R3, [R2]
-00000290: E2833001    ;                 ADD     R3, R3, #1
-00000294: E5023000    ;                 STR     R3, [R2]
-00000298: EB000007    ;                 BL      Clock_check       ; call function to check next day / alarms
-0000029C: EB00001C    ;                 BL      Clock_display
-000002A0:             ; ;               BL      Alarm_check
-000002A0: E5001000    ; cu_done         STR     R1, [R0]
-000002A4: E8BD800F    ;                 LDMFD   SP!, {PC, R0-R3}
-000002A8:             ; 
-000002A8:             ; ; Called when setting the time of the clock
-000002A8:             ; ; inputs: R0 = time since midnight in seconds
-000002A8:             ; 
-000002A8: E92D4002    ; Clock_set       STMFD   SP!, {LR, R1}
-000002AC: E24F1060    ;                 ADR     R1, clock_time
-000002B0: E5010000    ;                 STR     R0, [R1]
-000002B4: EB000000    ;                 BL      Clock_check
-000002B8: E8BD8002    ;                 LDMFD   SP!, {PC, R1}
-000002BC:             ; 
-000002BC:             ; 
-000002BC:             ; ; Checks if we need to roll over to a new day & call alarm checks
-000002BC: E92D4007    ; Clock_check     STMFD   SP!, {LR, R0-R2}
-000002C0: E24F1074    ;                 ADR     R1, clock_time
-000002C4: E5110000    ;                 LDR     R0, [R1]
-000002C8: E24F2068    ;                 ADR     R2, secs_in_day
-000002CC: E5122000    ;                 LDR     R2, [R2]
-000002D0: E1500002    ;                 CMP     R0, R2
-000002D4: A3A00000    ;                 MOVGE   R0, #0                ; reset clock to 0 if >= secs_in_day
-000002D8: A5010000    ;                 STRGE   R0, [R1]
-000002DC: E8BD8007    ;                 LDMFD   SP!, {PC, R0-R2}
-000002E0:             ; 
-000002E0:             ; 
-000002E0:             ; ; Converts seconds since midnight into hours, minutes, seconds
-000002E0:             ; ; inputs: R0 = time since midnight in seconds
-000002E0:             ; ; outputs: R0 = seconds , R1 = minutes, R2 = hours
-000002E0:             ; 
-000002E0: E3A01000    ; Clock_format    MOV     R1, #0                ; zero hours, mins
-000002E4: E3A02000    ;                 MOV     R2, #0
-000002E8: E3500EE1    ; cf_s_hours      CMP     R0, #secs_in_hour
-000002EC: BA000002    ;                 BLT     cf_s_mins             ; no more hours left
-000002F0: E2822001    ;                 ADD     R2, R2, #1
-000002F4: E2400EE1    ;                 SUB     R0, R0, #secs_in_hour
-000002F8: EAFFFFFA    ;                 B       cf_s_hours
-000002FC: E350003C    ; cf_s_mins       CMP     R0, #secs_in_min      ; check mins
-00000300: BA000002    ;                 BLT     cf_done
-00000304: E2811001    ;                 ADD     R1, R1, #1
-00000308: E240003C    ;                 SUB     R0, R0, #secs_in_min
-0000030C: EAFFFFFA    ;                 B       cf_s_mins
-00000310: E1A0F00E    ; cf_done         MOV     PC, LR                ; we're done and left with seconds in R0
-00000314:             ; 
-00000314:             ; 
-00000314:             ; ; Displays the current time on the LCD screen
-00000314: E92D400F    ; Clock_display   STMFD   SP!, {LR, R0-R3}
-00000318: E24F00C0    ;                 ADR     R0, clock_show        ; check if we should display the time
-0000031C: E5100000    ;                 LDR     R0, [R0]
-00000320: E3500000    ;                 CMP     R0, #0
-00000324: 0A000012    ;                 BEQ     cd_done  
-00000328: EB00002E    ;                 BL      LCD_Clear             ; clear the screen
-0000032C: E24F00E0    ;                 ADR     R0, clock_time        ; load time
-00000330: E5100000    ;                 LDR     R0, [R0]
-00000334: EBFFFFE9    ;                 BL      Clock_format          ; format into sec, min, hr
-00000338: E1A03000    ;                 MOV     R3, R0                ; move secs into r3 for now
-0000033C: E1A00002    ;                 MOV     R0, R2                ; move hours into R0 to print
-00000340: EB00002E    ;                 BL      LCD_Write_num
-00000344: E3A0003A    ;                 MOV     R0, #colon_code       ; print a colon
-00000348: EB000014    ;                 BL      LCD_Write_char
-0000034C: E1A00001    ;                 MOV     R0, R1                ; move mins into r0 & print
-00000350: EB00002A    ;                 BL      LCD_Write_num
-00000354: E24F00F8    ;                 ADR     R0, clock_secs        ; check if we should display seconds
-00000358: E5100000    ;                 LDR     R0, [R0]
-0000035C: E3500000    ;                 CMP     R0, #0
-00000360: 0A000003    ;                 BEQ     cd_done               ; skip over the seconds
-00000364: E3A0003A    ;                 MOV     R0, #colon_code
-00000368: EB00000C    ;                 BL      LCD_Write_char
-0000036C: E1A00003    ;                 MOV     R0, R3                ; move seconds back & print
-00000370: EB000022    ;                 BL      LCD_Write_num
-00000374: E8BD800F    ; cd_done         LDMFD   SP!, {PC, R0-R3}
-00000378:             ; 
-00000378:             ;                 INCLUDE util.s
-00000378:             ; ; Divide10 procedure
-00000378:             ; ; R0 = number to divide
-00000378:             ; ; returns the divided value in R0, remainder in R1
-00000378: 1999999A    ; divisor10       DEFW    &1999999A             ; ~2^32/10
-0000037C: E92D400C    ; Divide10        STMFD   SP!, {LR, R2, R3}
-00000380: E24F1010    ;                 ADR     R1, divisor10
-00000384: E5111000    ;                 LDR     R1, [R1]
-00000388: E0832190    ;                 UMULL   R2, R3, R0, R1        ; we're essentially doing n * 2^32/1000 then divi
-                      ; ding by 2^32
-0000038C: E3A0100A    ;                 MOV     R1, #10
-00000390: E0010193    ;                 MUL     R1, R3, R1            ; mul back by 10
-00000394: E0401001    ;                 SUB     R1, R0, R1            ; remainder into r1
-00000398: E1A00003    ;                 MOV     R0, R3                ; move divided value to R0
-0000039C: E8BD800C    ;                 LDMFD   SP!, {PC, R2, R3}
-000003A0:             ; 
-000003A0:             ; 
-000003A0:             ; ; include program
-000003A0:             ;                 INCLUDE program.s
-000003A0:             ; INCLUDE   includes/lcd.s
-000003A0:             ; ;---------------------------------------------------------------------------
-000003A0:             ; ;       Matt Walton
-000003A0:             ; ;       Version 1.0
-000003A0:             ; ;       18th February 2019
-000003A0:             ; ;
-000003A0:             ; ;       This program implements my previous code for writing to an LCD
-000003A0:             ; ;       but instead making sure the driver is run in supervisor mode
-000003A0:             ; ;       and calls are made from user code to this via SVC calls.
-000003A0:             ; ;
-000003A0:             ; ;---------------------------------------------------------------------------
-000003A0:             ; 
-000003A0:             ; ; lcd.s
-000003A0:             ; ; this provides functions to make calls to the LCD driver a bit nicer
-000003A0:             ; 
-000003A0:             ; lcd_code_clear  EQU   1
-000003A0:             ; 
-000003A0:             ; ; Procedure to write a character to the LCD using the SVC call
-000003A0:             ; ; R0 = character
-000003A0: E92D4003    ; LCD_Write_char  STMFD SP!, {LR, R1 ,R0}
-000003A4: E1A01000    ;                 MOV   R1, R0            ; move our value at R0 to R1
-000003A8: E3A00001    ;                 MOV   R0, #1            ; we want to write a character
-000003AC: EF000000    ;                 SVC   0                 ; Call our service routine
-000003B0: E8BD8003    ;                 LDMFD SP!, {PC, R1, R0}
-000003B4:             ; 
-000003B4:             ; 
-000003B4:             ; ; Procedure to send a command to the LCD controller
-000003B4:             ; ; R0 = cmd
-000003B4: E92D4003    ; LCD_Write_cmd   STMFD SP!, {LR, R1 ,R0}
-000003B8: E1A01000    ;                 MOV   R1, R0            ; move our value at R0 to R1
-000003BC: E3A00000    ;                 MOV   R0, #0            ; we want to send a command
-000003C0: EF000000    ;                 SVC   0                 ; Call our service routine
-000003C4: E8BD8003    ;                 LDMFD SP!, {PC, R1, R0}
-000003C8:             ; 
-000003C8:             ; ; Procedure to write a string to the LCD
-000003C8:             ; ; R0 = start address of string
-000003C8:             ; ; The procedure will continue until a null byte string terminator is hit
-000003C8:             ; 
-000003C8: E92D4003    ; LCD_Write_str   STMFD SP!, {LR, R0, R1}     ; we're using R2, and want to push the LR to the st
-                      ; ack
-000003CC: E1A01000    ;                 MOV   R1, R0            ; move R0 > R1
-000003D0: E4D10001    ; next_byte       LDRB  R0, [R1], #1      ; load our byte into R2 and increment
-000003D4: E3500000    ;                 CMP   R0, #0            ; are we at null byte? end of string?
-000003D8: 0A000001    ;                 BEQ   wstr_dne
-000003DC:             ; 
-000003DC: EBFFFFEF    ;                 BL    LCD_Write_char
-000003E0: EAFFFFFA    ;                 BAL   next_byte
-000003E4: E8BD8003    ; wstr_dne        LDMFD SP!, {PC, R0, R1}     ; pop our registers back and branch back
-000003E8:             ; 
-000003E8:             ; ; Procedure to clear the screen of the LCD
-000003E8: E92D4001    ; LCD_Clear       STMFD SP!, {LR, R0}
-000003EC: E3A00001    ;                 MOV   R0, #lcd_code_clear
-000003F0: EBFFFFEF    ;                 BL    LCD_Write_cmd
-000003F4: E8BD8001    ;                 LDMFD SP!, {PC, R0}
-000003F8:             ; 
-000003F8:             ; 
-000003F8:             ; ; Procedure to set the status of the LCD backlight
-000003F8:             ; ; R0 = 1 for on , 0 for off
-000003F8:             ; 
-000003F8: EF000001    ; LCD_Set_light   SVC   1                     ; just call the service routine
-000003FC: E1A0F00E    ;                 MOV   PC, LR
-00000400:             ; 
-00000400:             ; ; Procedure for writing a 2 digit 0-padded number to the LCD
-00000400:             ; ; R0 = number
-00000400: E92D4003    ; LCD_Write_num   STMFD SP!, {LR, R0-R1}
-00000404: EBFFFFDC    ;                 BL    Divide10              ; now we can just print r0 then r1
-00000408: E2800030    ;                 ADD   R0, R0, #&30          ; add 0x30 to them for ascii
-0000040C: E2811030    ;                 ADD   R1, R1, #&30
-00000410: EBFFFFE2    ;                 BL    LCD_Write_char
-00000414: E1A00001    ;                 MOV   R0, R1
-00000418: EBFFFFE0    ;                 BL    LCD_Write_char
-0000041C: E8BD8003    ;                 LDMFD SP!, {PC, R0-R1}
+000001B4:             ; 
+000001B4:             ; ; OS_init - initalises the stacks, interrupts, drivers, etc
+000001B4:             ; 
+000001B4:             ; OS_init
+000001B4: E10F0000    ;                 MRS      R0, CPSR                 ; load CPSR into r0
+000001B8: E3C0001F    ;                 BIC      R0, R0, #cpsr_sys        ; clear usermode
+000001BC: E380001F    ;                 ORR      R0, R0, #cpsr_sys        ; set user to system
+000001C0: E12FF000    ;                 MSR      CPSR, R0                 ; write back cpsr
+000001C4: E24FDF4B    ;                 ADR      SP, usr_stack+stack_size ; setup usr stack
+000001C8:             ; 
+000001C8: E3C0001F    ;                 BIC      R0, R0, #cpsr_sys        ; do the same for IRQ
+000001CC: E3800012    ;                 ORR      R0, R0, #cpsr_irq
+000001D0: E12FF000    ;                 MSR      CPSR, R0
+000001D4: E24FD0BC    ;                 ADR      SP, irq_stack + stack_size
+000001D8:             ; 
+000001D8: E3C0001F    ;                 BIC      R0, R0, #cpsr_sys        ; and for svc
+000001DC: E3800013    ;                 ORR      R0, R0, #cpsr_svc
+000001E0: E12FF000    ;                 MSR      CPSR, R0
+000001E4: E24FD04C    ;                 ADR      SP, svc_stack + stack_size
+000001E8:             ; 
+000001E8:             ; ; OS procedure to enable IRQ interrupts
+000001E8:             ; 
+000001E8: E24F0050    ; OS_en_irq       ADR     R0, ir_enabled            ; load enabled flags
+000001EC: E5100000    ;                 LDR     R0, [R0]
+000001F0: E3A01201    ;                 MOV     R1, #base_adr
+000001F4: E281101C    ;                 ADD     R1, R1, #ire_ofs
+000001F8: E5010000    ;                 STR     R0, [R1]                  ; enable our interrupts
+000001FC: E10F0000    ;                 MRS     R0, CPSR
+00000200: E3C00080    ;                 BIC     R0, R0, #irq_mask         ; enable IRQ on CPU
+00000204: E12FF000    ;                 MSR     CPSR, R0
+00000208:             ; 
+00000208: E3A01001    ; OS_init_lcd     MOV     R1, #lcd_cmd_clr          ; clear our lcd screen
+0000020C: E3A00000    ;                 MOV     R0, #0                    ; 0 = command
+00000210: EF000000    ;                 SVC     0
+00000214:             ; 
+00000214: E10F0000    ; OS_program      MRS     R0, CPSR
+00000218: E3C0001F    ;                 BIC     R0, R0, #cpsr_sys
+0000021C: E3800010    ;                 ORR     R0, R0, #cpsr_usr         ; set mode to user
+00000220: E12FF000    ;                 MSR     CPSR,  R0
+00000224: EA00028E    ;                 B       Main                      ; branch to main program
+00000228:             ; 
+00000228:             ; ; SVC entry point
+00000228:             ; 
+00000228: E92D4000    ; OS_svc          STMFD   SP!, {LR}
+0000022C: E51EE004    ;                 LDR     R14, [LR, #-4]            ; copy the calling inst (ret adr - 4) to R1
+00000230: E3CEE4FF    ;                 BIC     R14, R14, #&FF000000      ; mask off opcode
+00000234: E35E0004    ;                 CMP     R14, #svc_jmax            ; validation of svc code
+00000238: 5A000006    ;                 BPL     svc_done                  ; svc code > max
+0000023C: E35E0000    ;                 CMP     R14, #0                   ; svc code < 0
+00000240: 4A000004    ;                 BMI     svc_done
+00000244: E92D0001    ;                 STMFD   SP!, {R0}                 ; push r0
+00000248: E24F00AC    ;                 ADR     R0, svc_jumps             ; get adr of jump table
+0000024C: E080E10E    ;                 ADD     R14, R0, R14 LSL #2       ; add R0 * 4
+00000250: E8BD0001    ;                 LDMFD   SP!, {R0}                 ; pop r0
+00000254: E51EF000    ;                 LDR     PC, [R14]
+00000258:             ; 
+00000258:             ; ; procedure to be called at the end of a service routine, returns us back
+00000258: E8BD4000    ; svc_done        LDMFD   SP!, {LR}
+0000025C: E1B0F00E    ;                 MOVS    PC, LR
+00000260:             ; 
+00000260:             ; ; Interrupt service routine
+00000260:             ; 
+00000260: E92D4007    ; OS_irq          STMFD   SP!, {R0-R2, LR}          ; Store working regs & return adr
+00000264: E3A01201    ;                 MOV     R1, #base_adr             ; check which interrupt fired
+00000268: E2811018    ;                 ADD     R1, R1, #ira_ofs
+0000026C: E5510000    ;                 LDRB    R0, [R1]
+00000270: E3100040    ;                 TST     R0, #ir_ubutton           ; check if upper button
+00000274: 13C00040    ;                 BICNE   R0, R0, #ir_ubutton       ; mark done
+00000278: 1B0000E4    ;                 BLNE    Btn_u_check               ; run routine
+0000027C: E3100080    ;                 TST     R0, #ir_lbutton           ; check lower button
+00000280: 13C00080    ;                 BICNE   R0, R0, #ir_lbutton
+00000284: 1B0000E7    ;                 BLNE    Btn_d_check
+00000288: E3100001    ;                 TST     R0, #ir_timer             ; check timer
+0000028C: 13C00001    ;                 BICNE   R0, R0, #ir_timer
+00000290: 1B000099    ;                 BLNE    Timer_update
+00000294: E5410000    ;                 STRB    R0, [R1]                  ; acknowledge interrupt
+00000298: E8BD4007    ; isr_done        LDMFD   SP!, {R0-R2, LR}          ; restore & return
+0000029C: E25EF004    ;                 SUBS    PC, LR, #4
+000002A0:             ; 
+000002A0: E3A00241    ; Get_PIOB        MOV     R0, #(base_adr + piob_ofs)
+000002A4: E5500000    ;                 LDRB    R0, [R0]
+000002A8: EAFFFFEA    ;                 B       svc_done
+000002AC:             ; 
+000002AC:             ; ; include drivers
+000002AC:             ;                 INCLUDE drivers/lcd.s
+000002AC:             ; ;---------------------------------------------------------------------------
+000002AC:             ; ;       Matt Walton
+000002AC:             ; ;       Version 1.0
+000002AC:             ; ;       19th March 2019
+000002AC:             ; ;
+000002AC:             ; ;       This is an implementation for a LCD Driver
+000002AC:             ; ;
+000002AC:             ; ;---------------------------------------------------------------------------
+000002AC:             ; 
+000002AC:             ; lcd_cmd_clr     EQU     &1
+000002AC:             ; lcd_rw          EQU     bit_2
+000002AC:             ; lcd_rs          EQU     bit_1
+000002AC:             ; lcd_e           EQU     bit_0
+000002AC:             ; lcd_light       EQU     bit_5
+000002AC:             ; 
+000002AC:             ; 
+000002AC:             ; ; Procedure to check if the LCD is ready & wait until it is
+000002AC: E92D4007    ; LCD_ready       STMFD   SP!, {LR, R0, R1, R2}
+000002B0: E3A00201    ;                 MOV     R0, #base_adr             ; portA adr
+000002B4: E5D01004    ;                 LDRB    R1, [R0, #piob_ofs]       ; load contents of port B
+000002B8: E3811004    ;                 ORR     R1, R1, #lcd_rw           ; set r/w bit to 1
+000002BC: E3C11002    ;                 BIC     R1, R1, #lcd_rs           ; set RS=0
+000002C0: E5C01004    ;                 STRB    R1, [R0, #piob_ofs]       ; write cmd to port B
+000002C4: E3811001    ; wr_loop         ORR     R1, R1, #lcd_e            ; set E=1
+000002C8: E5C01004    ;                 STRB    R1, [R0, #piob_ofs]       ; write data to port B
+000002CC: E5502000    ;                 LDRB    R2, [R0]                  ; read our status bytes
+000002D0: E3C11001    ;                 BIC     R1, R1, #lcd_e            ; set E=0
+000002D4: E5C01004    ;                 STRB    R1, [R0, #piob_ofs]       ; write command back
+000002D8: E2022080    ;                 AND     R2, R2, #bit_7
+000002DC: E2522080    ;                 SUBS    R2, R2, #bit_7
+000002E0: 0AFFFFF7    ;                 BEQ     wr_loop                   ; we are still busy, poll again
+000002E4: E8BD8007    ;                 LDMFD   SP!, {PC, R0, R1, R2}     ; pop & return
+000002E8:             ; 
+000002E8:             ; 
+000002E8:             ; ; procedure to either write a cmd or data to the lcd
+000002E8:             ; ; R0 (1/0) specifies the value of RS (0 - cmd, 1- data)
+000002E8:             ; ; R1 specifies the cmd/character
+000002E8:             ; 
+000002E8: E92D400C    ; LCD_write       STMFD   SP!, {LR, R2, R3}
+000002EC: EBFFFFEE    ;                 BL      LCD_ready                 ; wait for lcd to be ready
+000002F0: E3A02201    ;                 MOV     R2, #base_adr             ; load adr of port A into R2
+000002F4: E5D23004    ;                 LDRB    R3, [R2, #piob_ofs]       ; load ctrl byte to r3
+000002F8: E3C33006    ;                 BIC     R3, R3, #(lcd_rw OR lcd_rs) ; set RW=0 & RS=0 (we're writing)
+000002FC: E1833080    ;                 ORR     R3, R3, R0 lsl #1         ; set RS=R0
+00000300: E5C23004    ;                 STRB    R3, [R2, #piob_ofs]       ; store back in port B
+00000304: E5421000    ;                 STRB    R1, [R2]                  ; store our data
+00000308: E3833001    ;                 ORR     R3, R3, #lcd_e            ; set E=1
+0000030C: E5C23004    ;                 STRB    R3, [R2, #piob_ofs]       ; store back
+00000310: E3C33001    ;                 BIC     R3, R3, #lcd_e            ; set E=0
+00000314: E5C23004    ;                 STRB    R3, [R2, #piob_ofs]       ; store back
+00000318: E8BD400C    ;                 LDMFD   SP!, {LR, R2, R3}
+0000031C: EAFFFFCD    ;                 B       svc_done
+00000320:             ; 
+00000320:             ; ; procedure to set the LCD backlight to on/off
+00000320:             ; ; R0 specifies 0 for off and 1 for on
+00000320:             ; 
+00000320: E92D4006    ; LCD_set_light   STMFD   SP!, {LR, R1, R2}
+00000324: E3A01201    ;                 MOV     R1, #base_adr
+00000328: E5D12004    ;                 LDRB    R2, [R1, #piob_ofs]         ; load piob
+0000032C: E3500000    ;                 CMP     R0, #0                      ; check if we wanna turn it off
+00000330: 03C22020    ;                 BICEQ   R2, R2, #lcd_light          ; clear bit if 0
+00000334: 13822020    ;                 ORRNE   R2, R2, #lcd_light          ; activate bit if 1
+00000338: E5C12004    ;                 STRB    R2, [R1, #piob_ofs]         ; save back
+0000033C: E8BD4006    ;                 LDMFD   SP!, {LR, R1, R2}
+00000340: EAFFFFC4    ;                 B       svc_done
+00000344:             ; 
+00000344:             ;                 INCLUDE drivers/buzzer.s
+00000344:             ; ;---------------------------------------------------------------------------
+00000344:             ; ;       Matt Walton
+00000344:             ; ;       Version 1.0
+00000344:             ; ;       19th March 2019
+00000344:             ; ;
+00000344:             ; ;       This is an implementation for a very simple buzzer (on/off)
+00000344:             ; ;
+00000344:             ; ;---------------------------------------------------------------------------
+00000344:             ; 
+00000344:             ; buzzer_ofs      EQU     0                         ; located on S0 lower
+00000344:             ; 
+00000344: E92D4003    ; Buzzer_set      STMFD   SP!, {LR, R0-R1}
+00000348: E3A01202    ;                 MOV     R1, #fpga_adr
+0000034C: E2811000    ;                 ADD     R1, R1, #buzzer_ofs
+00000350: E3500000    ;                 CMP     R0, #0                    ; 0 = off, 1 = on
+00000354: 13A000FF    ;                 MOVNE   R0, #0xFF                 ; enable buzzer
+00000358: E5410000    ;                 STRB    R0, [R1]
+0000035C: E8BD4003    ;                 LDMFD   SP!, {LR, R0-R1}
+00000360: EAFFFFBC    ;                 B       svc_done
+00000364:             ; 
+00000364:             ;                 INCLUDE drivers/keyboard.s
+00000364:             ; ;---------------------------------------------------------------------------
+00000364:             ; ;       Matt Walton
+00000364:             ; ;       Version 1.0
+00000364:             ; ;       19th March 2019
+00000364:             ; ;
+00000364:             ; ;       This is an implementation for a matrix keyboard driver
+00000364:             ; ;
+00000364:             ; ;---------------------------------------------------------------------------
+00000364:             ; 
+00000364:             ; ; keyboard.s
+00000364:             ; 
+00000364:             ; 
+00000364:             ; ; Keys are debounced with an array of bytes
+00000364:             ; ; 0xFF is stored in the array when a key is pressed and it will not allow
+00000364:             ; ; further input until the value is 0.
+00000364:             ; ; The values are shifted left 1 place every 25ms by the timer module
+00000364:             ; ; This means there must be a minimum of 200ms between each key press
+00000364:             ; 
+00000364:             ; k_fpga_adr      EQU     &20000000
+00000364:             ; k_col_start     EQU     &80
+00000364:             ; k_row_start     EQU     &1
+00000364:             ; k_col_count     EQU     &3
+00000364:             ; k_row_count     EQU     &4
+00000364:             ; 
+00000364:             ; k_max_index     EQU     k_col_count * k_row_count -1
+00000364:             ; 
+00000364: FF          ; k_last_key      DEFB    -1
+00000365:             ; 
+00000365: 00          ; k_bounce_array  DEFB    0
+00000366: 00          ;                 DEFB    0
+00000367: 00          ;                 DEFB    0
+00000368: 00          ;                 DEFB    0
+00000369: 00          ;                 DEFB    0
+0000036A: 00          ;                 DEFB    0
+0000036B: 00          ;                 DEFB    0
+0000036C: 00          ;                 DEFB    0
+0000036D: 00          ;                 DEFB    0
+0000036E: 00          ;                 DEFB    0
+0000036F:             ; 
+0000036F:             ; k_max_val       EQU     9
+0000036F:             ; 
+00000370:             ;                 ALIGN   4
+00000370:             ; 
+00000370:             ; ; Method that loops through the keyboard and updates the keys status in the bounce array
+00000370:             ; ; when the key reads FF then we're pressed!
+00000370:             ; 
+00000370: E92D401E    ; Keyboard_scan   STMFD   SP!, {LR, R1-R4}
+00000374: E3A01202    ;                 MOV     R1, #k_fpga_adr
+00000378: E3A0001F    ;                 MOV     R0, #&1F
+0000037C: E5C10003    ;                 STRB    R0, [R1, #3]              ; set the ctrl reg
+00000380: E3A02000    ;                 MOV     R2, #0                    ; R2 stores col
+00000384:             ; 
+00000384: E3A00080    ; k_scan_col      MOV     R0, #k_col_start
+00000388: E3A03000    ;                 MOV     R3, #0                    ; R3 stores row
+0000038C: E1A00230    ;                 MOV     R0, R0 LSR R2
+00000390: E5C10002    ;                 STRB    R0, [R1, #2]              ; enable the column
+00000394: E5D14002    ;                 LDRB    R4, [R1, #2]              ; get the data
+00000398: E0544000    ;                 SUBS    R4, R4, R0                ; sub the column
+0000039C: E3A00001    ; k_scan_row      MOV     R0, #k_row_start
+000003A0: E1A00310    ;                 MOV     R0, R0 LSL R3
+000003A4: E1500004    ;                 CMP     R0, R4
+000003A8: 03A00001    ;                 MOVEQ   R0, #1                    ; 1 if fired
+000003AC: 13A00000    ;                 MOVNE   R0, #0                    ; 0 if not
+000003B0: 0B000006    ;                 BLEQ    Keyboard_check
+000003B4: E2833001    ;                 ADD     R3, R3, #1
+000003B8: E3530004    ;                 CMP     R3, #k_row_count          ; check if we done all rows
+000003BC: 1AFFFFF6    ;                 BNE     k_scan_row
+000003C0: E2822001    ;                 ADD     R2, R2, #1
+000003C4: E3520003    ;                 CMP     R2, #k_col_count
+000003C8: 1AFFFFED    ;                 BNE     k_scan_col
+000003CC: E8BD801E    ;                 LDMFD   SP!, {PC, R1-R4}          ; return
+000003D0:             ; 
+000003D0:             ; ; Fired when a key is pressed, not debounced yet
+000003D0: E92D400F    ; Keyboard_check  STMFD   SP!, {LR, R0-R3}
+000003D4: E3A01003    ;                 MOV     R1, #k_col_count
+000003D8: E0010391    ;                 MUL     R1, R1, R3                ; index = row * col_count + col
+000003DC: E0811002    ;                 ADD     R1, R1, R2
+000003E0: E351000B    ;                 CMP     R1, #k_max_index          ; check if valid index
+000003E4: CA00000C    ;                 BGT     k_upd_done                ; index not valid!
+000003E8: E2811001    ;                 ADD     R1, R1, #1                ; add 1 to get keypad value
+000003EC: E351000B    ;                 CMP     R1, #0xB                  ; this is the 0 value, so set accordingly
+000003F0: 03A01000    ;                 MOVEQ   R1, #0
+000003F4: E3510009    ;                 CMP     R1, #k_max_val            ; we only want 0-9 for this Project
+000003F8: CA000007    ;                 BGT     k_upd_done
+000003FC: E24F209F    ;                 ADR     R2, k_bounce_array        ; get the bounce status
+00000400: E7D23001    ;                 LDRB    R3, [R2, R1]
+00000404: E3530000    ;                 CMP     R3, #0                    ; only allow continue if 0
+00000408: 1A000003    ;                 BNE     k_upd_done
+0000040C: E3A030FF    ;                 MOV     R3, #0xFF                 ; set the bounce
+00000410: E7C23001    ;                 STRB    R3, [R2, R1]
+00000414: E1A00001    ;                 MOV     R0, R1
+00000418: EB00000A    ;                 BL      Keyboard_press
+0000041C: E8BD800F    ; k_upd_done      LDMFD   SP!, {PC, R0-R3}          ; return
 00000420:             ; 
-00000420:             ; ; Procedure to write & pad so that the next thing we write is on the second line
-00000420:             ; ; R0 = start address of string
-00000420:             ; 
-00000420: E92D4003    ; LCD_Write_pad   STMFD SP!, {LR, R0, R1}
-00000424:             ; ;                MOV   R2, R0                ; move R0 > R2
-00000424:             ; ;                MOV   R1, #0                ; set counter to 0
-00000424:             ; ;next_byte       CMP   R1, #40               ; are we at end of line yet
-00000424:             ; ;                BEQ   wstr_dne
-00000424:             ; ;LDRB  R0, [R2, R1]          ; load our byte into R2 and increment
-00000424:             ; 
-00000424:             ; ;                BEQ   wstr_dne
-00000424:             ; 
-00000424:             ; ;                BL    LCD_Write_char
-00000424:             ; ;                BAL   next_byte
-00000424:             ; ;                wstr_dne        LDMFD SP!, {PC, R0, R1}     ; pop our registers back and branc
-                      ; h back
-00000424:             ; 
-00000424:             ; 
-00000424:             ;           ALIGN 4
-00000424:             ; 
-00000424: EAFFFFFE    ; Main      BAL Main
-00000428:             ; 
-00000428:             ; 
+00000420:             ; ; Called every 25ms to debounce
+00000420: E92D4007    ; Key_debounce    STMFD   SP!, {LR, R0-R2}
+00000424: E24F00C7    ;                 ADR     R0, k_bounce_array
+00000428: E3A01000    ;                 MOV     R1, #0                    ; storing the key we're debouncing
+0000042C: E7D02001    ; kdb_loop        LDRB    R2, [R0, R1]
+00000430: E1A02082    ;                 MOV     R2, R2, LSL#1             ; shift left
+00000434: E7C02001    ;                 STRB    R2, [R0, R1]
+00000438: E2811001    ;                 ADD     R1, R1, #1
+0000043C: E3510009    ;                 CMP     R1, #k_max_val
+00000440: DAFFFFF9    ;                 BLE     kdb_loop
+00000444: E8BD8007    ;                 LDMFD   SP!, {PC, R0-R2}
+00000448:             ; 
+00000448:             ; ; Called when an actual key is pressed
+00000448:             ; ; inputs: R0 = key value
+00000448: E92D4000    ; Keyboard_press  STMFD       SP!, {LR}
+0000044C: EB00019D    ;                 BL          Menu_key
+00000450: E8BD8000    ;                 LDMFD       SP!, {PC}
+00000454:             ; 
+00000454:             ; 
+00000454:             ; ; includes
+00000454:             ;                 INCLUDE includes/lcd.s
+00000454:             ; ;---------------------------------------------------------------------------
+00000454:             ; ;       Matt Walton
+00000454:             ; ;       Version 1.0
+00000454:             ; ;       18th February 2019
+00000454:             ; ;
+00000454:             ; ;       This program implements my previous code for writing to an LCD
+00000454:             ; ;       but instead making sure the driver is run in supervisor mode
+00000454:             ; ;       and calls are made from user code to this via SVC calls.
+00000454:             ; ;
+00000454:             ; ;---------------------------------------------------------------------------
+00000454:             ; 
+00000454:             ; ; lcd.s
+00000454:             ; ; this provides functions to make calls to the LCD driver a bit nicer
+00000454:             ; 
+00000454:             ; lcd_code_clear  EQU   1
+00000454:             ; 
+00000454:             ; ; Procedure to write a character to the LCD using the SVC call
+00000454:             ; ; R0 = character
+00000454: E92D4003    ; LCD_Write_char  STMFD   SP!, {LR, R1 ,R0}
+00000458: E1A01000    ;                 MOV     R1, R0                    ; move our value at R0 to R1
+0000045C: E3A00001    ;                 MOV     R0, #1                    ; we want to write a character
+00000460: EF000000    ;                 SVC     0                         ; Call our service routine
+00000464: E8BD8003    ;                 LDMFD   SP!, {PC, R1, R0}
+00000468:             ; 
+00000468:             ; 
+00000468:             ; ; Procedure to send a command to the LCD controller
+00000468:             ; ; R0 = cmd
+00000468: E92D4003    ; LCD_Write_cmd   STMFD   SP!, {LR, R1 ,R0}
+0000046C: E1A01000    ;                 MOV     R1, R0                    ; move our value at R0 to R1
+00000470: E3A00000    ;                 MOV     R0, #0                    ; we want to send a command
+00000474: EF000000    ;                 SVC     0                         ; Call our service routine
+00000478: E8BD8003    ;                 LDMFD   SP!, {PC, R1, R0}
+0000047C:             ; 
+0000047C:             ; ; Procedure to write a string to the LCD
+0000047C:             ; ; R0 = start address of string
+0000047C:             ; ; The procedure will continue until a null byte string terminator is hit
+0000047C:             ; 
+0000047C: E92D4003    ; LCD_Write_str   STMFD   SP!, {LR, R0, R1}         ; we're using R2, and want to push the LR to 
+                      ; the stack
+00000480: E1A01000    ;                 MOV     R1, R0                    ; move R0 > R1
+00000484: E4D10001    ; next_byte       LDRB    R0, [R1], #1              ; load our byte into R2 and increment
+00000488: E3500000    ;                 CMP     R0, #0                    ; are we at null byte? end of string?
+0000048C: 0A000001    ;                 BEQ     wstr_dne
+00000490: EBFFFFEF    ;                 BL      LCD_Write_char
+00000494: EAFFFFFA    ;                 BAL     next_byte
+00000498: E8BD8003    ; wstr_dne        LDMFD   SP!, {PC, R0, R1}         ; pop our registers back and branch back
+0000049C:             ; 
+0000049C:             ; ; Procedure to clear the screen of the LCD
+0000049C: E92D4001    ; LCD_Clear       STMFD   SP!, {LR, R0}
+000004A0: E3A00001    ;                 MOV     R0, #lcd_code_clear
+000004A4: EBFFFFEF    ;                 BL      LCD_Write_cmd
+000004A8: E8BD8001    ;                 LDMFD   SP!, {PC, R0}
+000004AC:             ; 
+000004AC:             ; 
+000004AC:             ; ; Procedure to set the status of the LCD backlight
+000004AC:             ; ; R0 = 1 for on , 0 for off
+000004AC:             ; 
+000004AC: EF000001    ; LCD_Set_light   SVC     1                         ; just call the service routine
+000004B0: E1A0F00E    ;                 MOV     PC, LR
+000004B4:             ; 
+000004B4:             ; ; Procedure for writing a 2 digit 0-padded number to the LCD
+000004B4:             ; ; R0 = number
+000004B4: E92D4003    ; LCD_Write_num   STMFD   SP!, {LR, R0-R1}
+000004B8: EB0001E0    ;                 BL      Divide10                  ; now we can just print r0 then r1
+000004BC: E2800030    ;                 ADD     R0, R0, #&30              ; add 0x30 to them for ascii
+000004C0: E2811030    ;                 ADD     R1, R1, #&30
+000004C4: EBFFFFE2    ;                 BL      LCD_Write_char
+000004C8: E1A00001    ;                 MOV     R0, R1
+000004CC: EBFFFFE0    ;                 BL      LCD_Write_char
+000004D0: E8BD8003    ;                 LDMFD   SP!, {PC, R0-R1}
+000004D4:             ; 
+000004D4:             ; ; Procedure for writing x number of spaces (0x20) for padding
+000004D4:             ; ; R0 = number of spaces
+000004D4: E92D4003    ; LCD_Do_spaces   STMFD   SP!, {LR, R0-R1}
+000004D8: E1A01000    ;                 MOV     R1, R0
+000004DC: E3A00020    ;                 MOV     R0, #&20
+000004E0: EBFFFFDB    ; lcdds_loop      BL      LCD_Write_char
+000004E4: E2411001    ;                 SUB     R1, R1, #1
+000004E8: E3510000    ;                 CMP     R1, #0
+000004EC: CAFFFFFB    ;                 BGT     lcdds_loop
+000004F0: E8BD8003    ;                 LDMFD   SP!, {PC, R0-R1}
+000004F4:             ; 
+000004F4:             ; 
+000004F4:             ; 
+000004F4:             ; ; include components
+000004F4:             ;                 INCLUDE timer.s
+000004F4:             ; ;--------------------------------------------------------
+000004F4:             ; ;     Matt Walton
+000004F4:             ; ;     Version 1.0
+000004F4:             ; ;     29th April 2019
+000004F4:             ; ;
+000004F4:             ; ;     EX9 - Final Project (Alarm Clock)
+000004F4:             ; ;--------------------------------------------------------
+000004F4:             ; 
+000004F4:             ; ; timer.s
+000004F4:             ; ; This module handles the timer interrupt and fires various system timers
+000004F4:             ; 
+000004F4:             ; ; Every 1 second - fire clock update
+000004F4:             ; ; Every 25ms - Debounce (tick)
+000004F4:             ; ; Every 1ms - Check piob
+000004F4:             ; 
+000004F4:             ; timer_inc       EQU     1                         ; 1ms timer
+000004F4:             ; timer_max       EQU     0xFF
+000004F4:             ; timer_s_1s      EQU     (1000 / timer_inc)        ; how many steps before 1s
+000004F4:             ; timer_s_25ms    EQU     (25/timer_inc)            ; how many steps before 25ms
+000004F4:             ; 
+000004F4: 00000000    ; timer_1s_c      DEFW    0                         ; counters to determine when to fire
+000004F8: 00000000    ; timer_25ms_c    DEFW    0
+000004FC:             ; 
+000004FC:             ; 
+000004FC: E92D400F    ; Timer_update    STMFD   SP!, {LR, R0-R3}
+00000500: EB00001D    ;                 BL      Timer_ms                  ; Fire every tick
+00000504: E24F0014    ;                 ADR     R0, timer_25ms_c          ; determine if 25ms has passed
+00000508: E5101000    ;                 LDR     R1, [R0]
+0000050C: E3510019    ;                 CMP     R1, #timer_s_25ms
+00000510: 12811001    ;                 ADDNE   R1, R1, #1                ; add 1 to count
+00000514: 03A01000    ;                 MOVEQ   R1, #0                    ; reset if equal
+00000518: E5001000    ;                 STR     R1, [R0]
+0000051C: 0B000012    ;                 BLEQ    Timer_25ms
+00000520:             ; 
+00000520: E24F0034    ;                 ADR     R0, timer_1s_c            ; determine if 1s has passed
+00000524: E5101000    ;                 LDR     R1, [R0]
+00000528: E3510FFA    ;                 CMP     R1, #timer_s_1s
+0000052C: 12811001    ;                 ADDNE   R1, R1, #1                ; add 1 to count
+00000530: 03A01000    ;                 MOVEQ   R1, #0                    ; reset if equal
+00000534: E5001000    ;                 STR     R1, [R0]
+00000538: 0B000007    ;                 BLEQ    Timer_sec
+0000053C:             ; 
+0000053C: E3A01201    ;                 MOV     R1, #base_adr             ; need to set the next interrupt
+00000540: E5D10008    ;                 LDRB    R0, [R1, #timer_ofs]
+00000544: E2800001    ;                 ADD     R0, R0, #timer_inc
+00000548: E35000FF    ;                 CMP     R0, #timer_max
+0000054C: 3A000000    ;                 BLO     t_do_compare
+00000550: E24000FF    ;                 SUB     R0, R0, #timer_max
+00000554: E5C1000C    ; t_do_compare    STRB    R0, [R1, #timer_c_ofs]
+00000558: E8BD800F    ;                 LDMFD   SP!, {PC, R0-R3}
+0000055C:             ; 
+0000055C:             ; 
+0000055C:             ; ; Fired every 1s, include the functions we want to happen in here
+0000055C: E92D4000    ; Timer_sec       STMFD   SP!, {LR}
+00000560: EB000045    ;                 BL      Clock_update
+00000564: EB0001A1    ;                 BL      Alarm_check
+00000568: E8BD8000    ;                 LDMFD   SP!, {PC}
+0000056C:             ; 
+0000056C:             ; ; Fired every 25ms, include the functions we want to happen in here
+0000056C: E92D4000    ; Timer_25ms      STMFD   SP!, {LR}
+00000570: EB000006    ;                 BL      Btn_debounce
+00000574: EBFFFFA9    ;                 BL      Key_debounce
+00000578: E8BD8000    ;                 LDMFD   SP!, {PC}
+0000057C:             ; 
+0000057C:             ; ; Fired every 1ms
+0000057C: E92D4000    ; Timer_ms        STMFD   SP!, {LR}
+00000580: EB000019    ;                 BL      Btn_a_check
+00000584: EBFFFF79    ;                 BL      Keyboard_scan
+00000588: E8BD8000    ;                 LDMFD   SP!, {PC}
+0000058C:             ; 
+0000058C:             ;                 INCLUDE button.s
+0000058C:             ; ;--------------------------------------------------------
+0000058C:             ; ;     Matt Walton
+0000058C:             ; ;     Version 1.0
+0000058C:             ; ;     29th April 2019
+0000058C:             ; ;
+0000058C:             ; ;     EX9 - Final Project (Alarm Clock)
+0000058C:             ; ;--------------------------------------------------------
+0000058C:             ; 
+0000058C:             ; ; button.s
+0000058C:             ; ; This module handles & debounces all button presses (except keyboard)
+0000058C:             ; ; The action button (next to screen) is checked every 1ms by the timer module
+0000058C:             ; 
+0000058C:             ; ; a = action button (next to screen)
+0000058C:             ; ; u = up button
+0000058C:             ; ; d = down button
+0000058C:             ; 
+0000058C:             ; ; Debouncing by only allowing fires on 0 value, setting to 1 then bit shifting
+0000058C: 00          ; btn_a_bounce    DEFB    0
+0000058D: 00          ; btn_u_bounce    DEFB    0
+0000058E: 00          ; btn_d_bounce    DEFB    0
+00000590:             ;                 ALIGN   4
+00000590:             ; 
+00000590:             ; ; Shifts all the bounce values left 1 place to eventually get back to 0
+00000590: E92D4003    ; Btn_debounce    STMFD   SP!, {LR, R0-R1}
+00000594: E24F0010    ;                 ADR     R0, btn_a_bounce          ; action button
+00000598: E5501000    ;                 LDRB    R1, [R0]
+0000059C: E1A01081    ;                 MOV     R1, R1, LSL#1
+000005A0: E5401000    ;                 STRB    R1, [R0]
+000005A4:             ; 
+000005A4: E24F001F    ;                 ADR     R0, btn_u_bounce          ; up button
+000005A8: E5501000    ;                 LDRB    R1, [R0]
+000005AC: E1A01081    ;                 MOV     R1, R1, LSL#1
+000005B0: E5401000    ;                 STRB    R1, [R0]
+000005B4:             ; 
+000005B4: E24F002E    ;                 ADR     R0, btn_d_bounce          ; down button
+000005B8: E5501000    ;                 LDRB    R1, [R0]
+000005BC: E1A01081    ;                 MOV     R1, R1, LSL#1
+000005C0: E5401000    ;                 STRB    R1, [R0]
+000005C4: E8BD8003    ;                 LDMFD   SP!, {PC, R0-R1}
+000005C8:             ; 
+000005C8:             ; ; Check if the button has debounced & updates
+000005C8:             ; ; inputs: R0 = adr of bounce value
+000005C8:             ; ; returns: 1 if enough time passed, 0 if not
+000005C8: E92D4002    ; Btn_check       STMFD   SP!, {LR, R1}
+000005CC: E5501000    ;                 LDRB    R1, [R0]
+000005D0: E3510000    ;                 CMP     R1, #0
+000005D4: 13A00000    ;                 MOVNE   R0, #0
+000005D8: 1A000002    ;                 BNE     btnc_done                 ; not enough time passed
+000005DC: E3A010FF    ;                 MOV     R1, #0xFF                 ; set to FF
+000005E0: E5401000    ;                 STRB    R1, [R0]
+000005E4: E3A00001    ;                 MOV     R0, #1
+000005E8: E8BD8002    ; btnc_done       LDMFD   SP!, {PC, R1}
+000005EC:             ; 
+000005EC:             ; ; Called by timer interrupt to check if middle button is pressed & debounced
+000005EC: E92D4003    ; Btn_a_check     STMFD   SP!, {LR, R0-R1}
+000005F0: EF000002    ;                 SVC     2                         ; get piob
+000005F4: E3100008    ;                 TST     R0, #piob_button
+000005F8: 0A000003    ;                 BEQ     btnca_done                ; not pressed
+000005FC: E24F0078    ;                 ADR     R0, btn_a_bounce          ; Check if enough time has passed
+00000600: EBFFFFF0    ;                 BL      Btn_check
+00000604: E3500001    ;                 CMP     R0, #1
+00000608: 0B00000C    ;                 BLEQ    Btn_a_pressed             ; Call button functions
+0000060C: E8BD8003    ; btnca_done      LDMFD   SP!, {PC, R0-R1}
+00000610:             ; 
+00000610:             ; ; Called by top button interrupt
+00000610: E92D4001    ; Btn_u_check     STMFD   SP!, {LR, R0}
+00000614: E24F008F    ;                 ADR     R0, btn_u_bounce          ; check if enough time passed
+00000618: EBFFFFEA    ;                 BL      Btn_check
+0000061C: E3500001    ;                 CMP     R0, #1
+00000620: 0B00000B    ;                 BLEQ    Btn_u_pressed
+00000624: E8BD8001    ;                 LDMFD   SP!, {PC, R0}
+00000628:             ; 
+00000628:             ; ; Called by bottom button interrupt
+00000628: E92D4001    ; Btn_d_check     STMFD   SP!, {LR, R0}
+0000062C: E24F00A6    ;                 ADR     R0, btn_d_bounce          ; check if enough time passed
+00000630: EBFFFFE4    ;                 BL      Btn_check
+00000634: E3500001    ;                 CMP     R0, #1
+00000638: 0B000008    ;                 BLEQ    Btn_d_pressed
+0000063C: E8BD8001    ;                 LDMFD   SP!, {PC, R0}
+00000640:             ; 
+00000640:             ; ; Button actions
+00000640:             ; ; Called when middle (action) button is pressed
+00000640: E92D4001    ; Btn_a_pressed   STMFD   SP!, {LR, R0}
+00000644: EB000158    ;                 BL      Alarm_reset
+00000648: E3500001    ;                 CMP     R0, #1                    ; Alarm_reset returns 1 to block any other bt
+                      ; n actions
+0000064C: 1B0000B5    ;                 BLNE    Menu_press
+00000650: E8BD8001    ;                 LDMFD   SP!, {PC, R0}
+00000654:             ; 
+00000654:             ; ; Called when up button is pressed
+00000654: E92D4000    ; Btn_u_pressed   STMFD   SP!, {LR}
+00000658: EB0000C9    ;                 BL      Menu_up
+0000065C: E8BD8000    ;                 LDMFD   SP!, {PC}
+00000660:             ; 
+00000660:             ; ; Called when down button is pressed
+00000660: E92D4000    ; Btn_d_pressed   STMFD   SP!, {LR}
+00000664: EB0000DC    ;                 BL      Menu_down
+00000668: E8BD8000    ;                 LDMFD   SP!, {PC}
+0000066C:             ; 
+0000066C:             ;                 INCLUDE clock.s
+0000066C:             ; ;--------------------------------------------------------
+0000066C:             ; ;     Matt Walton
+0000066C:             ; ;     Version 1.0
+0000066C:             ; ;     29th April 2019
+0000066C:             ; ;
+0000066C:             ; ;     EX9 - Final Project (Alarm Clock)
+0000066C:             ; ;--------------------------------------------------------
+0000066C:             ; 
+0000066C:             ; ; clock.s
+0000066C:             ; ; This contains the code for keeping track & displaying of the current time
+0000066C:             ; 
+0000066C: 00000000    ; clock_time      DEFW    0                         ; current time since midnight in seconds
+00000670:             ; 
+00000670: 00000001    ; clock_show      DEFW    1                         ; whether to display the time or not (disable
+                      ; d when menu open etc)
+00000674: 00000001    ; clock_secs      DEFW    1                         ; whether to display seconds on the clock
+00000678:             ; 
+00000678:             ; secs_in_min     EQU     60
+00000678:             ; secs_in_hour    EQU     3600
+00000678: 00015180    ; secs_in_day     DEFW    86400
+0000067C:             ; 
+0000067C:             ; colon_code      EQU     0x3A                      ; ascii code for :
+0000067C:             ; 
+0000067C:             ; 
+0000067C:             ; ; Called by the timer interrupt every second
+0000067C:             ; ; Returns current time in seconds in R0
+0000067C: E92D4002    ; Clock_update    STMFD   SP!, {LR, R1}
+00000680: E24F101C    ;                 ADR     R1, clock_time            ; update clock time
+00000684: E5110000    ;                 LDR     R0, [R1]
+00000688: E2800001    ;                 ADD     R0, R0, #1
+0000068C: E5010000    ;                 STR     R0, [R1]
+00000690: EB00000A    ;                 BL      Clock_check               ; call function to check next day / alarms
+00000694: EB00002C    ;                 BL      Clock_display
+00000698: E8BD8002    ;                 LDMFD   SP!, {PC, R1}
+0000069C:             ; 
+0000069C:             ; ; Called to enable/disable clock
+0000069C:             ; ; inputs R0 = 0/1 (off/on)
+0000069C: E92D4003    ; Clock_sshow     STMFD   SP!, {LR, R0-R1}
+000006A0: E24F1038    ;                 ADR     R1, clock_show
+000006A4: E5010000    ;                 STR     R0, [R1]
+000006A8: E8BD8003    ;                 LDMFD   SP!, {PC, R0-R1}
+000006AC:             ; 
+000006AC:             ; ; Called when setting the time of the clock
+000006AC:             ; ; inputs: R0 = time since midnight in seconds
+000006AC:             ; 
+000006AC: E92D4002    ; Clock_set       STMFD   SP!, {LR, R1}
+000006B0: E24F104C    ;                 ADR     R1, clock_time
+000006B4: E5010000    ;                 STR     R0, [R1]
+000006B8: EB000000    ;                 BL      Clock_check
+000006BC: E8BD8002    ;                 LDMFD   SP!, {PC, R1}
+000006C0:             ; 
+000006C0:             ; 
+000006C0:             ; ; Checks if we need to roll over to a new day & call alarm checks
+000006C0: E92D4007    ; Clock_check     STMFD   SP!, {LR, R0-R2}
+000006C4: E24F1060    ;                 ADR     R1, clock_time
+000006C8: E5110000    ;                 LDR     R0, [R1]
+000006CC: E24F205C    ;                 ADR     R2, secs_in_day
+000006D0: E5122000    ;                 LDR     R2, [R2]
+000006D4: E1500002    ;                 CMP     R0, R2
+000006D8: A3A00000    ;                 MOVGE   R0, #0                    ; reset clock to 0 if >= secs_in_day
+000006DC: A5010000    ;                 STRGE   R0, [R1]
+000006E0: E8BD8007    ;                 LDMFD   SP!, {PC, R0-R2}
+000006E4:             ; 
+000006E4:             ; 
+000006E4:             ; ; Called to toggle between showing seconds and not
+000006E4: E92D4003    ; Clock_tseconds  STMFD   SP!, {LR, R0-R1}
+000006E8: E24F007C    ;                 ADR     R0, clock_secs
+000006EC: E5101000    ;                 LDR     R1, [R0]
+000006F0: E3510000    ;                 CMP     R1, #0                    ; check which mode we're in & set accordingly
+000006F4: 03A01001    ;                 MOVEQ   R1, #1
+000006F8: 13A01000    ;                 MOVNE   R1, #0
+000006FC: E5001000    ;                 STR     R1, [R0]
+00000700: E8BD4003    ;                 LDMFD   SP!, {LR, R0-R1}
+00000704:             ; 
+00000704:             ; 
+00000704:             ; ; Gets the current time in seconds, minutes, hours
+00000704:             ; ; outputs: R0 = seconds , R1 = minutes, R2 = hours
+00000704: E92D4000    ; Clock_get       STMFD   SP!, {LR}
+00000708: E24F00A4    ;                 ADR     R0, clock_time
+0000070C: E5100000    ;                 LDR     R0, [R0]
+00000710: EB000000    ;                 BL      Clock_format
+00000714: E8BD8000    ;                 LDMFD   SP!, {PC}
+00000718:             ; 
+00000718:             ; ; Converts seconds since midnight into hours, minutes, seconds
+00000718:             ; ; inputs: R0 = time since midnight in seconds
+00000718:             ; ; outputs: R0 = seconds , R1 = minutes, R2 = hours
+00000718:             ; 
+00000718: E3A01000    ; Clock_format    MOV     R1, #0                    ; zero hours, mins
+0000071C: E3A02000    ;                 MOV     R2, #0
+00000720: E3500EE1    ; cf_s_hours      CMP     R0, #secs_in_hour
+00000724: BA000002    ;                 BLT     cf_s_mins                 ; no more hours left
+00000728: E2822001    ;                 ADD     R2, R2, #1
+0000072C: E2400EE1    ;                 SUB     R0, R0, #secs_in_hour
+00000730: EAFFFFFA    ;                 B       cf_s_hours
+00000734: E350003C    ; cf_s_mins       CMP     R0, #secs_in_min          ; check mins
+00000738: BA000002    ;                 BLT     cf_done
+0000073C: E2811001    ;                 ADD     R1, R1, #1
+00000740: E240003C    ;                 SUB     R0, R0, #secs_in_min
+00000744: EAFFFFFA    ;                 B       cf_s_mins
+00000748: E1A0F00E    ; cf_done         MOV     PC, LR                    ; we're done and left with seconds in R0
+0000074C:             ; 
+0000074C:             ; 
+0000074C:             ; ; Displays the current time on the LCD screen
+0000074C: E92D400F    ; Clock_display   STMFD   SP!, {LR, R0-R3}
+00000750: E24F00E8    ;                 ADR     R0, clock_show            ; check if we should display the time
+00000754: E5100000    ;                 LDR     R0, [R0]
+00000758: E3500000    ;                 CMP     R0, #0
+0000075C: 0A000010    ;                 BEQ     cd_done
+00000760: EBFFFF4D    ;                 BL      LCD_Clear                 ; clear the screen
+00000764: EBFFFFE6    ;                 BL      Clock_get                 ; get the time
+00000768: EB00000E    ;                 BL      Clock_draw                ; draw hours & mins
+0000076C: E3A01023    ;                 MOV     R1, #35                   ; how many spaces we need to get to next line
+00000770: E1A03000    ;                 MOV     R3, R0                    ; move secs into r3 for now
+00000774: E24F0F42    ;                 ADR     R0, clock_secs            ; check if we should display seconds
+00000778: E5100000    ;                 LDR     R0, [R0]
+0000077C: E3500000    ;                 CMP     R0, #0
+00000780: 0A000004    ;                 BEQ     cd_alarm                  ; skip over the seconds
+00000784: E3A0003A    ;                 MOV     R0, #colon_code
+00000788: EBFFFF31    ;                 BL      LCD_Write_char
+0000078C: E1A00003    ;                 MOV     R0, R3                    ; move seconds back & print
+00000790: EBFFFF47    ;                 BL      LCD_Write_num
+00000794: E2411003    ;                 SUB     R1, R1, #3                ; need 3 less spaces
+00000798: E1A00001    ; cd_alarm        MOV     R0, R1
+0000079C: EBFFFF4C    ;                 BL      LCD_Do_spaces
+000007A0: EB0000F6    ;                 BL      Alarm_display             ; display alarm
+000007A4: E8BD800F    ; cd_done         LDMFD   SP!, {PC, R0-R3}
+000007A8:             ; 
+000007A8:             ; ; Function to draw a specific time (mins + hours)
+000007A8:             ; ; input: R1 = mins, R2 = hours
+000007A8:             ; 
+000007A8: E92D4007    ; Clock_draw      STMFD   SP!, {LR, R0-R2}
+000007AC: E1A00002    ;                 MOV     R0, R2                    ; move hours into R0 to print
+000007B0: EBFFFF3F    ;                 BL      LCD_Write_num
+000007B4: E3A0003A    ;                 MOV     R0, #colon_code           ; print a colon
+000007B8: EBFFFF25    ;                 BL      LCD_Write_char
+000007BC: E1A00001    ;                 MOV     R0, R1                    ; move mins into r0 & print
+000007C0: EBFFFF3B    ;                 BL      LCD_Write_num
+000007C4: E8BD8007    ;                 LDMFD   SP!, {PC, R0-R2}
+000007C8:             ; 
+000007C8:             ;                 INCLUDE menu.s
+000007C8:             ; ;--------------------------------------------------------
+000007C8:             ; ;     Matt Walton
+000007C8:             ; ;     Version 1.0
+000007C8:             ; ;     29th April 2019
+000007C8:             ; ;
+000007C8:             ; ;     EX9 - Final Project (Alarm Clock)
+000007C8:             ; ;--------------------------------------------------------
+000007C8:             ; 
+000007C8:             ; ; menu.s
+000007C8:             ; ; This contains the code for the menu
+000007C8:             ; 
+000007C8:             ;                 ALIGN    4
+000007C8:             ; 
+000007C8: FFFFFFFF    ; menu_state      DEFW    -1                        ; -1 if menu is closed, else is the index of 
+                      ; the selected item
+000007CC: 00000000    ; menu_set        DEFW    0                         ; if the menu is in time setting mode, 1 = ho
+                      ; urs, 2 = seconds
+000007D0:             ; 
+000007D0: 00000000    ; menu_set_hours  DEFW    0
+000007D4: 00000000    ; menu_set_mins   DEFW    0
+000007D8:             ; 
+000007D8: 3E 20 00    ; menu_cursor     DEFB    '> \0'
+000007DB:             ; menu_arrow      EQU     0x5E
+000007DB:             ; 
+000007DB:             ; menu_max        EQU     4
+000007DB: 42 61 63 6B ; menu_labels     DEFB    'Back to clock \0'
+000007DF: 20 74 6F 20 ; 
+000007E3: 63 6C 6F 63 ; 
+000007E7: 6B 20 00    ; 
+000007EA: 53 65 74 20 ;                 DEFB    'Set alarm     \0'
+000007EE: 61 6C 61 72 ; 
+000007F2: 6D 20 20 20 ; 
+000007F6: 20 20 00    ; 
+000007F9: 43 6C 65 61 ;                 DEFB    'Clear alarm   \0'
+000007FD: 72 20 61 6C ; 
+00000801: 61 72 6D 20 ; 
+00000805: 20 20 00    ; 
+00000808: 53 65 74 20 ;                 DEFB    'Set time      \0'
+0000080C: 74 69 6D 65 ; 
+00000810: 20 20 20 20 ; 
+00000814: 20 20 00    ; 
+00000817: 54 6F 67 67 ;                 DEFB    'Toggle Seconds\0'
+0000081B: 6C 65 20 53 ; 
+0000081F: 65 63 6F 6E ; 
+00000823: 64 73 00    ; 
+00000826:             ; 
+00000828:             ;                 ALIGN   4
+00000828:             ; 
+00000828: 0000085C    ; menu_functions  DEFW    Menu_close
+0000082C: 00000A2C    ;                 DEFW    Menu_setter
+00000830: 00000B60    ;                 DEFW    Alarm_clear
+00000834: 00000A2C    ;                 DEFW    Menu_setter
+00000838: 000006E4    ;                 DEFW    Clock_tseconds
+0000083C:             ; 
+0000083C:             ; 
+0000083C:             ; ; Called to open the menu & hide the clock
+0000083C: E92D4003    ; Menu_open       STMFD   SP!, {LR, R0-R1}
+00000840: E24F0080    ;                 ADR     R0, menu_state
+00000844: E3A01000    ;                 MOV     R1, #0                    ; set menu state to 0 (open & first option)
+00000848: E5001000    ;                 STR     R1, [R0]
+0000084C: E24F0F79    ;                 ADR     R0, clock_show            ; hide the clock for now
+00000850: E5001000    ;                 STR     R1, [R0]
+00000854: EB000009    ;                 BL      Menu_render
+00000858: E8BD8003    ;                 LDMFD   SP!, {PC, R0-R1}
+0000085C:             ; 
+0000085C:             ; ; Called to close the menu & show the clock again
+0000085C: E92D4003    ; Menu_close      STMFD   SP!, {LR, R0-R1}
+00000860: E24F00A0    ;                 ADR     R0, menu_state
+00000864: E3E01000    ;                 MOV     R1, #-1                   ; set menu state to -1 (closed)
+00000868: E5001000    ;                 STR     R1, [R0]
+0000086C: E24F0F81    ;                 ADR     R0, clock_show            ; show the clock again
+00000870: E3A01001    ;                 MOV     R1, #1
+00000874: E5001000    ;                 STR     R1, [R0]
+00000878: EBFFFFB3    ;                 BL      Clock_display
+0000087C: E8BD8003    ;                 LDMFD   SP!, {PC, R0-R1}
+00000880:             ; ; Menu render function
+00000880: E92D4007    ; Menu_render     STMFD   SP!, {LR, R0-R2}
+00000884: EBFFFF04    ;                 BL      LCD_Clear                 ; clear the screen
+00000888: E24F10C8    ;                 ADR     R1, menu_state            ; load the menu state
+0000088C: E5111000    ;                 LDR     R1, [R1]
+00000890: E24F20CC    ;                 ADR     R2, menu_set              ; are we setting a time?
+00000894: E5122000    ;                 LDR     R2, [R2]
+00000898: E3520000    ;                 CMP     R2, #0
+0000089C: 0A000001    ;                 BEQ     mr_menu                   ; no, contiue rendering as normal
+000008A0: EB000010    ;                 BL      Menu_render_set           ; yes, render the setting menu
+000008A4: EA00000E    ;                 B       mr_done
+000008A8: E24F00D8    ; mr_menu         ADR     R0, menu_cursor           ; render the cursor
+000008AC: EBFFFEF2    ;                 BL      LCD_Write_str
+000008B0: E24F00DD    ;                 ADR     R0, menu_labels           ; render the first label
+000008B4: E3A0200F    ;                 MOV     R2, #15                   ; multiplying the state by 14 to get our labe
+                      ; l address
+000008B8: E0020192    ;                 MUL     R2, R2, R1
+000008BC: E0800002    ;                 ADD     R0, R0, R2                ; we now have the address in R0
+000008C0: EBFFFEED    ;                 BL      LCD_Write_str             ; write to screen
+000008C4: E3510004    ;                 CMP     R1, #menu_max             ; check if we have one below
+000008C8: AA000005    ;                 BGE     mr_done
+000008CC: E280000F    ;                 ADD     R0, R0, #15               ; add 15 to current addr to get next label
+000008D0: E1A01000    ;                 MOV     R1, R0                    ; move to R1 for now
+000008D4: E3A0001A    ;                 MOV     R0, #26                   ; we need 26 spaces to get to the next row & 
+                      ; aligned
+000008D8: EBFFFEFD    ;                 BL      LCD_Do_spaces
+000008DC: E1A00001    ;                 MOV     R0, R1
+000008E0: EBFFFEE5    ;                 BL      LCD_Write_str
+000008E4: E8BD8007    ; mr_done         LDMFD   SP!, {PC, R0-R2}
+000008E8:             ; 
+000008E8:             ; 
+000008E8:             ; ; Render function for a submenu which allows the user to select a specific time
+000008E8: E92D4007    ; Menu_render_set STMFD   SP!, {LR, R0-R2}
+000008EC: E24F1E12    ;                 ADR     R1, menu_set_mins         ; load the mins and hours in
+000008F0: E5111000    ;                 LDR     R1, [R1]
+000008F4: E24F2F4B    ;                 ADR     R2, menu_set_hours
+000008F8: E5122000    ;                 LDR     R2, [R2]
+000008FC: EBFFFFA9    ;                 BL      Clock_draw                ; draw a clock
+00000900: E3A00023    ;                 MOV     R0, #35                   ; 35 more characters till next line
+00000904: E24F1D05    ;                 ADR     R1, menu_set              ; see which part of the time to draw arrows u
+                      ; nder
+00000908: E5111000    ;                 LDR     R1, [R1]
+0000090C: E3510002    ;                 CMP     R1, #2                    ; if 2, then need to add 3 more spaces on to 
+                      ; get arrows in right place
+00000910: 02800003    ;                 ADDEQ   R0, R0, #3
+00000914: EBFFFEEE    ;                 BL      LCD_Do_spaces
+00000918: E3A0005E    ;                 MOV     R0, #menu_arrow           ; load our arrow character
+0000091C: EBFFFECC    ;                 BL      LCD_Write_char            ; print char twice
+00000920: EBFFFECB    ;                 BL      LCD_Write_char
+00000924: E8BD8007    ;                 LDMFD   SP!, {PC, R0-R2}
+00000928:             ; 
+00000928:             ; 
+00000928:             ; ; checks if the menu button is pressed
+00000928: E92D4003    ; Menu_press      STMFD   SP!, {LR, R0-R1}
+0000092C: E24F0F5B    ;                 ADR     R0, menu_state            ; check if the menu is opened
+00000930: E5100000    ;                 LDR     R0, [R0]
+00000934: E3500000    ;                 CMP     R0, #0
+00000938: AA000001    ;                 BGE     mo_check_set              ; if its open then see what we need to do
+0000093C: EBFFFFBE    ;                 BL      Menu_open                 ; open the menu
+00000940: EA00000E    ;                 B       mo_done                   ; We're done here
+00000944: E24F0D06    ; mo_check_set    ADR     R0, menu_set              ; check if we're setting a time
+00000948: E5100000    ;                 LDR     R0, [R0]
+0000094C: E3500000    ;                 CMP     R0, #0
+00000950: 0A000001    ;                 BEQ     mo_function               ; if not then do the menu function
+00000954: EB00003F    ;                 BL      Menu_doset                ; do the setting of the time
+00000958: EA000008    ;                 B       mo_done
+0000095C: E24F0F67    ; mo_function     ADR     R0, menu_state            ; get the menu state (will be what the cursor
+                      ;  is on)
+00000960: E5100000    ;                 LDR     R0, [R0]
+00000964: E3A01004    ;                 MOV     R1, #4                    ; Need to multiply R0 by 4 to get the address
+                      ;  of the function
+00000968: E0000190    ;                 MUL     R0, R0, R1
+0000096C: E24F1F53    ;                 ADR     R1, menu_functions
+00000970: E0811000    ;                 ADD     R1, R1, R0                ; add the offset for the menu function
+00000974: E5111000    ;                 LDR     R1, [R1]                  ; load the menu function address
+00000978: E1A0E00F    ;                 MOV     LR, PC                    ; set LR
+0000097C: E1A0F001    ;                 MOV     PC, R1                    ; branch to our menu function
+00000980: E8BD8003    ; mo_done         LDMFD   SP!, {PC, R0-R1}
+00000984:             ; 
+00000984:             ; ; Called when up button pressed
+00000984: E92D4003    ; Menu_up         STMFD   SP!, {LR, R0-R1}
+00000988: E24F0F71    ;                 ADR     R0, menu_set
+0000098C: E5100000    ;                 LDR     R0, [R0]
+00000990: E3500001    ;                 CMP     R0, #1
+00000994: BA000006    ;                 BLT     menu_scrl_u               ; if in menu, scroll up
+00000998: 024F0E1D    ;                 ADREQ   R0, menu_set_hours        ; set the hours if equal to 1
+0000099C: 124F0E1D    ;                 ADRNE   R0, menu_set_mins         ; else set mins
+000009A0: E5101000    ;                 LDR     R1, [R0]
+000009A4: E2811001    ;                 ADD     R1, R1, #1                ; add 1 to it
+000009A8: E5001000    ;                 STR     R1, [R0]                  ; store back
+000009AC: EBFFFFB3    ;                 BL      Menu_render
+000009B0: EA000008    ;                 BAL     menu_up_dne
+000009B4: E24F0F7D    ; menu_scrl_u     ADR     R0, menu_state
+000009B8: E5101000    ;                 LDR     R1, [R0]
+000009BC: E3710001    ;                 CMP     R1, #-1
+000009C0: 0A000004    ;                 BEQ     menu_up_dne               ; do nothing whilst menu is closed
+000009C4: E3510000    ;                 CMP     R1, #0                    ; check if 0, don't do anything if it is
+000009C8: 0A000002    ;                 BEQ     menu_up_dne
+000009CC: E2411001    ;                 SUB     R1, R1, #1                ; else sub 1 and move up list
+000009D0: E5001000    ;                 STR     R1, [R0]
+000009D4: EBFFFFA9    ;                 BL      Menu_render               ; re-render menu
+000009D8: E8BD8003    ; menu_up_dne     LDMFD   SP!, {PC, R0-R1}
+000009DC:             ; 
+000009DC:             ; ; Called when down button pressed
+000009DC: E92D4003    ; Menu_down       STMFD   SP!, {LR, R0-R1}
+000009E0: E24F0F87    ;                 ADR     R0, menu_set
+000009E4: E5100000    ;                 LDR     R0, [R0]
+000009E8: E3500001    ;                 CMP     R0, #1
+000009EC: BA000004    ;                 BLT     menu_scrl_d               ; if in menu, scroll down
+000009F0: 024F0F8A    ;                 ADREQ   R0, menu_set_hours        ; set the hours if equal to 1
+000009F4: 124F0F8A    ;                 ADRNE   R0, menu_set_mins         ; else set mins
+000009F8: E5101000    ;                 LDR     R1, [R0]
+000009FC: E2411001    ;                 SUB     R1, R1, #1                ; sub 1 to it
+00000A00: E5001000    ;                 STR     R1, [R0]                  ; store back
+00000A04: E24F0F91    ; menu_scrl_d     ADR     R0, menu_state
+00000A08: E5101000    ;                 LDR     R1, [R0]
+00000A0C: E3710001    ;                 CMP     R1, #-1
+00000A10: 0A000004    ;                 BEQ     menu_d_dne                ; do nothing whilst menu is closed
+00000A14: E3510004    ;                 CMP     R1, #menu_max             ; check if max, don't do anything if it is
+00000A18: 0A000002    ;                 BEQ     menu_d_dne
+00000A1C: E2811001    ;                 ADD     R1, R1, #1                ; else add 1 and move down list
+00000A20: E5001000    ;                 STR     R1, [R0]
+00000A24: EBFFFF95    ;                 BL      Menu_render               ; re-render menu
+00000A28: E8BD8003    ; menu_d_dne      LDMFD   SP!, {PC, R0-R1}
+00000A2C:             ; 
+00000A2C:             ; 
+00000A2C:             ; 
+00000A2C:             ; ; Called when the user selects that they want to set an alarm in the menu
+00000A2C: E92D4003    ; Menu_setter     STMFD   SP!, {LR, R0-R1}
+00000A30: E24F0F9B    ;                 ADR     R0, menu_set
+00000A34: E3A01001    ;                 MOV     R1, #1
+00000A38: E5001000    ;                 STR     R1, [R0]
+00000A3C: EBFFFF30    ;                 BL      Clock_get                 ; get the current time and set the window to 
+                      ; that
+00000A40: E24F0F9D    ;                 ADR     R0, menu_set_mins
+00000A44: E5001000    ;                 STR     R1, [R0]
+00000A48: E24F0D0A    ;                 ADR     R0, menu_set_hours
+00000A4C: E5002000    ;                 STR     R2, [R0]
+00000A50: EBFFFF8A    ;                 BL      Menu_render
+00000A54: E8BD8003    ;                 LDMFD   SP!, {PC, R0-R1}
+00000A58:             ; 
+00000A58:             ; ; Called when the action button is pressed whilst setting the time
+00000A58:             ; ; It should move to mins if on hours, and save if on mins
+00000A58: E92D4007    ; Menu_doset      STMFD   SP!, {LR, R0-R2}
+00000A5C: E24F0FA6    ;                 ADR     R0, menu_set            ; check what state of setting we're on
+00000A60: E5101000    ;                 LDR     R1, [R0]
+00000A64: E3510001    ;                 CMP     R1, #1
+00000A68: 1A000003    ;                 BNE     mds_set
+00000A6C: E3A01002    ;                 MOV     R1, #2                  ; move onto minutes
+00000A70: E5001000    ;                 STR     R1, [R0]
+00000A74: EBFFFF81    ;                 BL      Menu_render
+00000A78: EA000010    ;                 B       mds_done
+00000A7C: E3A01000    ; mds_set         MOV     R1, #0                  ; set menu_set back to 0
+00000A80: E5001000    ;                 STR     R1, [R0]
+00000A84: E24F0FAF    ;                 ADR     R0, menu_set_hours      ; need to convert hours & minutes into seconds
+00000A88: E5100000    ;                 LDR     R0, [R0]
+00000A8C: E3A01EE1    ;                 MOV     R1, #secs_in_hour
+00000A90: E0000190    ;                 MUL     R0, R0, R1
+00000A94: E24F1FB2    ;                 ADR     R1, menu_set_mins
+00000A98: E5111000    ;                 LDR     R1, [R1]
+00000A9C: E3A0203C    ;                 MOV     R2, #secs_in_min
+00000AA0: E0010291    ;                 MUL     R1, R1, R2
+00000AA4: E0800001    ;                 ADD     R0, R0, R1              ; time in seconds is now in R0
+00000AA8: E24F1FBA    ;                 ADR     R1, menu_state          ; check if we're setting the clock or alarm
+00000AAC: E5111000    ;                 LDR     R1, [R1]
+00000AB0: E3510001    ;                 CMP     R1, #1                  ; 1 = set alarm, other would be set clock
+00000AB4: 0B00002D    ;                 BLEQ    Alarm_set
+00000AB8: 1BFFFEFB    ;                 BLNE    Clock_set
+00000ABC: EBFFFF66    ;                 BL      Menu_close              ; close the menu
+00000AC0: E8BD8007    ; mds_done        LDMFD   SP!, {PC, R0-R2}
+00000AC4:             ; 
+00000AC4:             ; ; Called when a key is pressed on the keypad
+00000AC4:             ; ; input R0=value of key pressed
+00000AC4:             ; 
+00000AC4: 00000000    ; menu_key_pos    DEFW    0                       ; where we should put the entered value
+00000AC8:             ; 
+00000AC8: E92D4001    ; Menu_key        STMFD   SP!, {LR, R0}
+00000ACC: E24F1FC2    ;                 ADR     R1, menu_set            ; see if we need to acknowledge input
+00000AD0: E5111000    ;                 LDR     R1, [R1]
+00000AD4: E3510000    ;                 CMP     R1, #0
+00000AD8: 0A000018    ;                 BEQ     mk_done
+00000ADC: E24F3020    ;                 ADR     R3, menu_key_pos        ; see if we've reached the end of the input
+00000AE0: E5134000    ;                 LDR     R4, [R3]
+00000AE4: E3540004    ;                 CMP     R4, #4
+00000AE8: 0A000014    ;                 BEQ     mk_done
+00000AEC: E3540002    ;                 CMP     R4, #2
+00000AF0: B24F2FCA    ;                 ADRLT   R2, menu_set_hours      ; decide between setting hours & mins
+00000AF4: A24F2FCA    ;                 ADRGE   R2, menu_set_mins
+00000AF8: E3540000    ;                 CMP     R4, #0
+00000AFC: 0A000004    ;                 BEQ     mk_10x
+00000B00: E3540002    ;                 CMP     R4, #2
+00000B04: 0A000002    ;                 BEQ     mk_10x
+00000B08: E5121000    ;                 LDR     R1, [R2]
+00000B0C: E0811000    ;                 ADD     R1, R1, R0
+00000B10: EA000001    ;                 B       mk_set
+00000B14: E3A0100A    ; mk_10x          MOV     R1, #10                 ; multiply by 10
+00000B18: E0010091    ;                 MUL     R1, R1, R0
+00000B1C: E5021000    ; mk_set          STR     R1, [R2]
+00000B20: E2844001    ;                 ADD     R4, R4, #1              ; add one to menu_key_pos
+00000B24: E3540002    ;                 CMP     R4, #2                  ; check if moved onto next number
+00000B28: E5034000    ;                 STR     R4, [R3]
+00000B2C: 1A000002    ;                 BNE     mk_render
+00000B30: E24F1FDB    ;                 ADR     R1, menu_set
+00000B34: E3A00002    ;                 MOV     R0, #2                  ; set the display arrow to minutes
+00000B38: E5010000    ;                 STR     R0, [R1] 
+00000B3C: EBFFFF4F    ; mk_render       BL      Menu_render
+00000B40: E8BD8001    ; mk_done         LDMFD   SP!, {PC, R0}
+00000B44:             ; 
+00000B44:             ;                 INCLUDE alarm.s
+00000B44:             ; ;--------------------------------------------------------
+00000B44:             ; ;     Matt Walton
+00000B44:             ; ;     Version 1.0
+00000B44:             ; ;     29th April 2019
+00000B44:             ; ;
+00000B44:             ; ;     EX9 - Final Project (Alarm Clock)
+00000B44:             ; ;--------------------------------------------------------
+00000B44:             ; 
+00000B44:             ; ; alarm.s
+00000B44:             ; ; This code contains all the functions for setting/displaying/resetting alarms
+00000B44:             ; ; The alarm time is stored in seconds in alarm_time
+00000B44:             ; 
+00000B44: 41 6C 61 72 ; alarm_str       DEFB    'Alarm: \0'
+00000B48: 6D 3A 20 00 ; 
+00000B4C: 57 41 4B 45 ; alarm_tstr      DEFB    'WAKE UP!!\0'
+00000B50: 20 55 50 21 ; 
+00000B54: 21 00       ; 
+00000B58:             ;                 ALIGN   4
+00000B58: FFFFFFFF    ; alarm_time      DEFW    -1                        ; alarm time, -1 for disabled
+00000B5C: 00000000    ; alarm_active    DEFW    0                         ; is the alarm going off?
+00000B60:             ; 
+00000B60: E92D4001    ; Alarm_clear     STMFD   SP!, {LR, R0}
+00000B64: E3E00000    ;                 MOV     R0, #-1
+00000B68: EB000000    ;                 BL      Alarm_set
+00000B6C: E8BD8001    ;                 LDMFD   SP!, {PC, R0}
+00000B70:             ; 
+00000B70:             ; ; Called to set an alarm, R0 is time in seconds
+00000B70: E92D4003    ; Alarm_set       STMFD   SP!, {LR, R0-R1}
+00000B74: E24F1024    ;                 ADR     R1, alarm_time
+00000B78: E5010000    ;                 STR     R0, [R1]
+00000B7C: E8BD8003    ;                 LDMFD   SP!, {PC, R0-R1}
+00000B80:             ; 
+00000B80:             ; ; Called to print the current set alarm time underneath the time
+00000B80:             ; 
+00000B80: E92D4003    ; Alarm_display   STMFD   SP!, {LR, R0-R1}
+00000B84: E24F1034    ;                 ADR     R1, alarm_time
+00000B88: E5111000    ;                 LDR     R1, [R1]                  ; load alarm time
+00000B8C: E3710001    ;                 CMP     R1, #-1                   ; Check if no alarm set
+00000B90: 0A000004    ;                 BEQ     ad_done                   ; don't draw alarm
+00000B94: E24F0058    ;                 ADR     R0, alarm_str
+00000B98: EBFFFE37    ;                 BL      LCD_Write_str             ; print alarm prefix
+00000B9C: E1A00001    ;                 MOV     R0, R1
+00000BA0: EBFFFEDC    ;                 BL      Clock_format              ; format the alarm
+00000BA4: EBFFFEFF    ;                 BL      Clock_draw                ; draw it
+00000BA8: E8BD8003    ; ad_done         LDMFD   SP!, {PC, R0-R1}
+00000BAC:             ; 
+00000BAC:             ; ; Called to stop the alarm whilst it is going off
+00000BAC:             ; 
+00000BAC: E92D4002    ; Alarm_reset     STMFD   SP!, {LR, R1}
+00000BB0: E24F005C    ;                 ADR     R0, alarm_active          ; check alarm active
+00000BB4: E5101000    ;                 LDR     R1, [R0]
+00000BB8: E3510001    ;                 CMP     R1, #1
+00000BBC: 13A00000    ;                 MOVNE   R0, #0
+00000BC0: 1A000009    ;                 BNE     ar_dne                    ; not active, finished
+00000BC4: E3A01000    ;                 MOV     R1, #0
+00000BC8: E5001000    ;                 STR     R1, [R0]                  ; disable alarm
+00000BCC: E3A00000    ;                 MOV     R0, #0
+00000BD0: EF000003    ;                 SVC     3                         ; Disable buzzer
+00000BD4: E24F0080    ;                 ADR     R0, alarm_active          ; set alarm inactive
+00000BD8: E3A01000    ;                 MOV     R1, #0
+00000BDC: E5001000    ;                 STR     R1, [R0]
+00000BE0: E3A00001    ;                 MOV     R0, #1
+00000BE4: EBFFFEAC    ;                 BL      Clock_sshow               ; set clock to show again
+00000BE8: E3A00001    ;                 MOV     R0, #1                    ; block any other button actions
+00000BEC: E8BD8002    ; ar_dne          LDMFD   SP!, {PC, R1}
+00000BF0:             ; 
+00000BF0:             ; ; check the alarm is going off
+00000BF0:             ; ; R0 = current time in seconds
+00000BF0:             ; 
+00000BF0: E92D4003    ; Alarm_check     STMFD   SP!, {LR, R0-R1}
+00000BF4: E24F10A4    ;                 ADR     R1, alarm_time
+00000BF8: E5111000    ;                 LDR     R1, [R1]                  ; load alarm time
+00000BFC: E1500001    ;                 CMP     R0, R1
+00000C00: 1A000000    ;                 BNE     ac_done                   ; alarm not going off
+00000C04: EB000000    ;                 BL      Alarm_trigger             ; set alarm off
+00000C08: E8BD8003    ; ac_done         LDMFD   SP!, {PC, R0-R1}
+00000C0C:             ; 
+00000C0C:             ; ; Called when the current time is equal to the alarm time
+00000C0C:             ; ; Enables buzzer, prints the message and hides the clock
+00000C0C:             ; 
+00000C0C: E92D4003    ; Alarm_trigger   STMFD   SP!, {LR, R0-R1}
+00000C10: EBFFFE21    ;                 BL      LCD_Clear                 ; clear screen
+00000C14: E24F00D0    ;                 ADR     R0, alarm_tstr            ; print alarm message
+00000C18: EBFFFE17    ;                 BL      LCD_Write_str
+00000C1C: E3A00001    ;                 MOV     R0, #1                    ; Enable buzzer
+00000C20: EF000003    ;                 SVC     3
+00000C24: E24F00D0    ;                 ADR     R0, alarm_active          ; set alarm active
+00000C28: E3A01001    ;                 MOV     R1, #1
+00000C2C: E5001000    ;                 STR     R1, [R0]
+00000C30: E3A00000    ;                 MOV     R0, #0
+00000C34: EBFFFE98    ;                 BL      Clock_sshow               ; set clock to not show
+00000C38: E8BD8003    ;                 LDMFD   SP!, {PC, R0-R1}
+00000C3C:             ; 
+00000C3C:             ;                 INCLUDE util.s
+00000C3C:             ; ;--------------------------------------------------------
+00000C3C:             ; ;     Matt Walton
+00000C3C:             ; ;     Version 1.0
+00000C3C:             ; ;     29th April 2019
+00000C3C:             ; ;
+00000C3C:             ; ;     EX9 - Final Project (Alarm Clock)
+00000C3C:             ; ;--------------------------------------------------------
+00000C3C:             ; 
+00000C3C:             ; ; util.s
+00000C3C:             ; ; This module contains functions which have no other place
+00000C3C:             ; 
+00000C3C:             ; ; Divide10 procedure
+00000C3C:             ; ; R0 = number to divide
+00000C3C:             ; ; returns the divided value in R0, remainder in R1
+00000C3C: 1999999A    ; divisor10       DEFW    &1999999A                 ; ~2^32/10
+00000C40: E92D400C    ; Divide10        STMFD   SP!, {LR, R2, R3}
+00000C44: E24F1010    ;                 ADR     R1, divisor10
+00000C48: E5111000    ;                 LDR     R1, [R1]
+00000C4C: E0832190    ;                 UMULL   R2, R3, R0, R1            ; we're essentially doing n * 2^32/1000 then 
+                      ; dividing by 2^32
+00000C50: E3A0100A    ;                 MOV     R1, #10
+00000C54: E0010193    ;                 MUL     R1, R3, R1                ; mul back by 10
+00000C58: E0401001    ;                 SUB     R1, R0, R1                ; remainder into r1
+00000C5C: E1A00003    ;                 MOV     R0, R3                    ; move divided value to R0
+00000C60: E8BD800C    ;                 LDMFD   SP!, {PC, R2, R3}
+00000C64:             ; 
+00000C64:             ; 
+00000C64:             ; ; include program
+00000C64:             ;                 INCLUDE program.s
+00000C64:             ; ;--------------------------------------------------------
+00000C64:             ; ;     Matt Walton
+00000C64:             ; ;     Version 1.0
+00000C64:             ; ;     29th April 2019
+00000C64:             ; ;
+00000C64:             ; ;     EX9 - Final Project (Alarm Clock)
+00000C64:             ; ;--------------------------------------------------------
+00000C64:             ; 
+00000C64:             ; ; program.s
+00000C64:             ; 
+00000C64:             ; ; Project features:
+00000C64:             ; ; - Working clock displayed on LCD screen with optional seconds toggle
+00000C64:             ; ; - Menu to set alarms / time / other options (access with button next to screen)
+00000C64:             ; ; - Mostly interrupt driven system
+00000C64:             ; ; - SVC calls to print to LCD, get PIOB status and activate buzzer
+00000C64:             ; ; - Simple buzzer
+00000C64:             ; ; - Keypad input for setting alarm/time
+00000C64:             ; 
+00000C64:             ; 
+00000C64:             ; ; Most of this application is interrupt driven so we only really have to do non O/S initalisati
+                      ; on tasks here
+00000C64:             ; 
+00000C64: E3A00001    ; Main      MOV   R0, #1
+00000C68: EBFFFE0F    ;           BL    LCD_Set_light                     ; Enable LCD backlight
+00000C6C:             ; 
+00000C6C: EAFFFFFE    ; done      B     done
+00000C70:             ; 
+00000C70:             ; 
 
 Symbol Table: Labels
 : bit_7                             00000080  Value
@@ -465,7 +1214,7 @@ Symbol Table: Labels
 : bit_2                             00000004  Value
 : bit_1                             00000002  Value
 : bit_0                             00000001  Value
-: stack_size                        00000030  Value
+: stack_size                        00000080  Value
 : cpsr_usr                          00000010  Value
 : cpsr_fiq                          00000011  Value
 : cpsr_irq                          00000012  Value
@@ -476,66 +1225,165 @@ Symbol Table: Labels
 : base_adr                          10000000  Value
 : piob_ofs                          00000004  Value
 : timer_ofs                         00000008  Value
+: timer_c_ofs                       0000000C  Value
 : ire_ofs                           0000001C  Value
 : ira_ofs                           00000018  Value
 : irq_mask                          00000080  Value
 : ir_timer                          00000001  Value
 : ir_ubutton                        00000040  Value
 : ir_lbutton                        00000080  Value
+: piob_button                       00000008  Value
+: max_hours                         00000018  Value
+: max_minutes                       0000003C  Value
+: fpga_adr                          20000000  Value
 : usr_stack                         00000020  Local -- ARM
-: irq_stack                         00000050  Local -- ARM
-: svc_stack                         00000080  Local -- ARM
-: ir_enabled                        000000B0  Local -- ARM
-: svc_jmax                          00000002  Value
-: svc_jumps                         000000B4  Local -- ARM
-: OS_init                           000000BC  Local -- ARM
-: OS_en_irq                         000000FC  Local -- ARM
-: OS_init_lcd                       0000011C  Local -- ARM
-: OS_program                        00000128  Local -- ARM
-: OS_svc                            0000013C  Local -- ARM
-: svc_done                          0000016C  Local -- ARM
-: OS_irq                            00000174  Local -- ARM
-: isr_done                          000001B0  Local -- ARM
-: Ubutton_press                     000001B4  Local -- ARM
-: Lbutton_press                     000001B8  Local -- ARM
+: irq_stack                         000000A0  Local -- ARM
+: svc_stack                         00000120  Local -- ARM
+: ir_enabled                        000001A0  Local -- ARM
+: svc_jmax                          00000004  Value
+: svc_jumps                         000001A4  Local -- ARM
+: OS_init                           000001B4  Local -- ARM
+: OS_en_irq                         000001E8  Local -- ARM
+: OS_init_lcd                       00000208  Local -- ARM
+: OS_program                        00000214  Local -- ARM
+: OS_svc                            00000228  Local -- ARM
+: svc_done                          00000258  Local -- ARM
+: OS_irq                            00000260  Local -- ARM
+: isr_done                          00000298  Local -- ARM
+: Get_PIOB                          000002A0  Local -- ARM
 : lcd_cmd_clr                       00000001  Value
 : lcd_rw                            00000004  Value
 : lcd_rs                            00000002  Value
 : lcd_e                             00000001  Value
 : lcd_light                         00000020  Value
-: LCD_ready                         000001BC  Local -- ARM
-: wr_loop                           000001D4  Local -- ARM
-: LCD_write                         000001F8  Local -- ARM
-: LCD_set_light                     00000230  Local -- ARM
-: clock_time                        00000254  Local -- ARM
-: clock_count                       00000258  Local -- ARM
-: clock_mode                        0000025C  Local -- ARM
-: clock_show                        00000260  Local -- ARM
-: clock_secs                        00000264  Local -- ARM
+: LCD_ready                         000002AC  Local -- ARM
+: wr_loop                           000002C4  Local -- ARM
+: LCD_write                         000002E8  Local -- ARM
+: LCD_set_light                     00000320  Local -- ARM
+: buzzer_ofs                        00000000  Value
+: Buzzer_set                        00000344  Local -- ARM
+: k_fpga_adr                        20000000  Value
+: k_col_start                       00000080  Value
+: k_row_start                       00000001  Value
+: k_col_count                       00000003  Value
+: k_row_count                       00000004  Value
+: k_max_index                       0000000B  Value
+: k_last_key                        00000364  Local -- ARM
+: k_bounce_array                    00000365  Local -- ARM
+: k_max_val                         00000009  Value
+: Keyboard_scan                     00000370  Local -- ARM
+: k_scan_col                        00000384  Local -- ARM
+: k_scan_row                        0000039C  Local -- ARM
+: Keyboard_check                    000003D0  Local -- ARM
+: k_upd_done                        0000041C  Local -- ARM
+: Key_debounce                      00000420  Local -- ARM
+: kdb_loop                          0000042C  Local -- ARM
+: Keyboard_press                    00000448  Local -- ARM
+: lcd_code_clear                    00000001  Value
+: LCD_Write_char                    00000454  Local -- ARM
+: LCD_Write_cmd                     00000468  Local -- ARM
+: LCD_Write_str                     0000047C  Local -- ARM
+: next_byte                         00000484  Local -- ARM
+: wstr_dne                          00000498  Local -- ARM
+: LCD_Clear                         0000049C  Local -- ARM
+: LCD_Set_light                     000004AC  Local -- ARM
+: LCD_Write_num                     000004B4  Local -- ARM
+: LCD_Do_spaces                     000004D4  Local -- ARM
+: lcdds_loop                        000004E0  Local -- ARM
+: timer_inc                         00000001  Value
+: timer_max                         000000FF  Value
+: timer_s_1s                        000003E8  Value
+: timer_s_25ms                      00000019  Value
+: timer_1s_c                        000004F4  Local -- ARM
+: timer_25ms_c                      000004F8  Local -- ARM
+: Timer_update                      000004FC  Local -- ARM
+: t_do_compare                      00000554  Local -- ARM
+: Timer_sec                         0000055C  Local -- ARM
+: Timer_25ms                        0000056C  Local -- ARM
+: Timer_ms                          0000057C  Local -- ARM
+: btn_a_bounce                      0000058C  Local -- ARM
+: btn_u_bounce                      0000058D  Local -- ARM
+: btn_d_bounce                      0000058E  Local -- ARM
+: Btn_debounce                      00000590  Local -- ARM
+: Btn_check                         000005C8  Local -- ARM
+: btnc_done                         000005E8  Local -- ARM
+: Btn_a_check                       000005EC  Local -- ARM
+: btnca_done                        0000060C  Local -- ARM
+: Btn_u_check                       00000610  Local -- ARM
+: Btn_d_check                       00000628  Local -- ARM
+: Btn_a_pressed                     00000640  Local -- ARM
+: Btn_u_pressed                     00000654  Local -- ARM
+: Btn_d_pressed                     00000660  Local -- ARM
+: clock_time                        0000066C  Local -- ARM
+: clock_show                        00000670  Local -- ARM
+: clock_secs                        00000674  Local -- ARM
 : secs_in_min                       0000003C  Value
 : secs_in_hour                      00000E10  Value
-: secs_in_day                       00000268  Local -- ARM
+: secs_in_day                       00000678  Local -- ARM
 : colon_code                        0000003A  Value
-: Clock_update                      0000026C  Local -- ARM
-: cu_done                           000002A0  Local -- ARM
-: Clock_set                         000002A8  Local -- ARM
-: Clock_check                       000002BC  Local -- ARM
-: Clock_format                      000002E0  Local -- ARM
-: cf_s_hours                        000002E8  Local -- ARM
-: cf_s_mins                         000002FC  Local -- ARM
-: cf_done                           00000310  Local -- ARM
-: Clock_display                     00000314  Local -- ARM
-: cd_done                           00000374  Local -- ARM
-: divisor10                         00000378  Local -- ARM
-: Divide10                          0000037C  Local -- ARM
-: lcd_code_clear                    00000001  Value
-: LCD_Write_char                    000003A0  Local -- ARM
-: LCD_Write_cmd                     000003B4  Local -- ARM
-: LCD_Write_str                     000003C8  Local -- ARM
-: next_byte                         000003D0  Local -- ARM
-: wstr_dne                          000003E4  Local -- ARM
-: LCD_Clear                         000003E8  Local -- ARM
-: LCD_Set_light                     000003F8  Local -- ARM
-: LCD_Write_num                     00000400  Local -- ARM
-: LCD_Write_pad                     00000420  Local -- ARM
-: Main                              00000424  Local -- ARM
+: Clock_update                      0000067C  Local -- ARM
+: Clock_sshow                       0000069C  Local -- ARM
+: Clock_set                         000006AC  Local -- ARM
+: Clock_check                       000006C0  Local -- ARM
+: Clock_tseconds                    000006E4  Local -- ARM
+: Clock_get                         00000704  Local -- ARM
+: Clock_format                      00000718  Local -- ARM
+: cf_s_hours                        00000720  Local -- ARM
+: cf_s_mins                         00000734  Local -- ARM
+: cf_done                           00000748  Local -- ARM
+: Clock_display                     0000074C  Local -- ARM
+: cd_alarm                          00000798  Local -- ARM
+: cd_done                           000007A4  Local -- ARM
+: Clock_draw                        000007A8  Local -- ARM
+: menu_state                        000007C8  Local -- ARM
+: menu_set                          000007CC  Local -- ARM
+: menu_set_hours                    000007D0  Local -- ARM
+: menu_set_mins                     000007D4  Local -- ARM
+: menu_cursor                       000007D8  Local -- ARM
+: menu_arrow                        0000005E  Value
+: menu_max                          00000004  Value
+: menu_labels                       000007DB  Local -- ARM
+: menu_functions                    00000828  Local -- ARM
+: Menu_open                         0000083C  Local -- ARM
+: Menu_close                        0000085C  Local -- ARM
+: Menu_render                       00000880  Local -- ARM
+: mr_menu                           000008A8  Local -- ARM
+: mr_done                           000008E4  Local -- ARM
+: Menu_render_set                   000008E8  Local -- ARM
+: Menu_press                        00000928  Local -- ARM
+: mo_check_set                      00000944  Local -- ARM
+: mo_function                       0000095C  Local -- ARM
+: mo_done                           00000980  Local -- ARM
+: Menu_up                           00000984  Local -- ARM
+: menu_scrl_u                       000009B4  Local -- ARM
+: menu_up_dne                       000009D8  Local -- ARM
+: Menu_down                         000009DC  Local -- ARM
+: menu_scrl_d                       00000A04  Local -- ARM
+: menu_d_dne                        00000A28  Local -- ARM
+: Menu_setter                       00000A2C  Local -- ARM
+: Menu_doset                        00000A58  Local -- ARM
+: mds_set                           00000A7C  Local -- ARM
+: mds_done                          00000AC0  Local -- ARM
+: menu_key_pos                      00000AC4  Local -- ARM
+: Menu_key                          00000AC8  Local -- ARM
+: mk_10x                            00000B14  Local -- ARM
+: mk_set                            00000B1C  Local -- ARM
+: mk_render                         00000B3C  Local -- ARM
+: mk_done                           00000B40  Local -- ARM
+: alarm_str                         00000B44  Local -- ARM
+: alarm_tstr                        00000B4C  Local -- ARM
+: alarm_time                        00000B58  Local -- ARM
+: alarm_active                      00000B5C  Local -- ARM
+: Alarm_clear                       00000B60  Local -- ARM
+: Alarm_set                         00000B70  Local -- ARM
+: Alarm_display                     00000B80  Local -- ARM
+: ad_done                           00000BA8  Local -- ARM
+: Alarm_reset                       00000BAC  Local -- ARM
+: ar_dne                            00000BEC  Local -- ARM
+: Alarm_check                       00000BF0  Local -- ARM
+: ac_done                           00000C08  Local -- ARM
+: Alarm_trigger                     00000C0C  Local -- ARM
+: divisor10                         00000C3C  Local -- ARM
+: Divide10                          00000C40  Local -- ARM
+: Main                              00000C64  Local -- ARM
+: done                              00000C6C  Local -- ARM
